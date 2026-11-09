@@ -2,6 +2,22 @@
 
 采用 Material Design 3（MD3）风格，以 Google 为主，兼容百度、必应与搜狗的搜索结果页美化脚本。当前版本：**1.9.13**。
 
+## 预览
+
+以下为 1.9.13 在真实 Google 搜索页的截图，单列与双列使用同一组搜索结果。
+
+### 双列瀑布流
+
+![双列瀑布流预览](docs/images/double-column.png)
+
+### 单列布局
+
+![单列布局预览](docs/images/single-column.png)
+
+### 界面设置
+
+![界面设置弹窗预览](docs/images/settings.png)
+
 ## 安装
 
 1. 安装暴力猴或 Tampermonkey。
