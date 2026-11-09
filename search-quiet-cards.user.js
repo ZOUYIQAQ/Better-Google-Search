@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.21
+// @version      1.9.22
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -684,7 +684,7 @@ dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both;
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.21";
+  const VERSION = "1.9.22";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -7500,6 +7500,26 @@ html[data-qc-active="true"]
       const hosts = new Map();
       let frame = 0;
       let disposed = false;
+      const sheetItems = new Set();
+      let layoutSheet = null;
+      let layoutSequence = 0;
+
+      // 百度过滤规则会匹配结果上的行内important，布局优先级只放进独立样式表。
+      function flushLayoutSheet() {
+        if (!sheetItems.size && !layoutSheet) return;
+        if (!layoutSheet) {
+          layoutSheet = document.createElement("style");
+          layoutSheet.id = `${ID}-masonry-style`;
+        }
+        const rules = [...sheetItems].filter((item) => item.node.isConnected).map((item) => {
+          const declarations = [...item.styles].map(([property, value]) =>
+            `  ${property}: ${value} !important;`,
+          ).join("\n");
+          return `html[data-qc-active="true"] #content_left > [data-qc-layout="${item.ruleId}"] {\n${declarations}\n}`;
+        }).join("\n");
+        if (layoutSheet.textContent !== rules) layoutSheet.textContent = rules;
+        if (!layoutSheet.isConnected) (document.head || root).append(layoutSheet);
+      }
       const enabled = () => !disposed && canRun() && innerWidth >= minWidth;
       const round = (n) => Math.round(n * 100) / 100;
       const number = (value) => Number.parseFloat(value) || 0;
@@ -7510,6 +7530,10 @@ html[data-qc-active="true"]
 
       // 设置本脚本负责的样式并保留原始值。
       function own(record, property, value) {
+        if (record.ruleId) {
+          record.styles.set(property, value);
+          return;
+        }
         const style = record.node.style;
         const current = style.getPropertyValue(property);
         const priority = style.getPropertyPriority(property);
@@ -7538,6 +7562,15 @@ html[data-qc-active="true"]
 
       // 恢复脚本改写的样式，保留站点后续更新。
       function restore(record) {
+        if (record.ruleId) {
+          if (record.node.getAttribute("data-qc-layout") === record.ruleId) {
+            if (record.originalRuleId === null) record.node.removeAttribute("data-qc-layout");
+            else record.node.setAttribute("data-qc-layout", record.originalRuleId);
+          }
+          sheetItems.delete(record);
+          record.styles.clear();
+          return;
+        }
         for (const [property, saved] of record.styles) {
           if (
             record.node.style.getPropertyValue(property) !== saved.written ||
@@ -7558,7 +7591,14 @@ html[data-qc-active="true"]
 
       // 记录节点样式，便于关闭主题时恢复原状。
       function record(node) {
-        return { node, styles: new Map() };
+        const item = { node, styles: new Map() };
+        if (A.namespace === "baidu" && node.parentElement?.id === "content_left") {
+          item.ruleId = `m${++layoutSequence}`;
+          item.originalRuleId = node.getAttribute("data-qc-layout");
+          node.setAttribute("data-qc-layout", item.ruleId);
+          sheetItems.add(item);
+        }
+        return item;
       }
 
       // 遍历结果分组，返回实际参与布局的结果单元。
@@ -7714,6 +7754,7 @@ html[data-qc-active="true"]
         restore(state.host);
         host.classList.remove("qc-masonry-host");
         hosts.delete(host);
+        flushLayoutSheet();
       }
 
       // 计算列宽、卡片高度及位置，批量应用布局。
@@ -7792,6 +7833,7 @@ html[data-qc-active="true"]
             rtl: hostCSS.direction === "rtl",
           });
         }
+        flushLayoutSheet();
         for (const plan of plans) {
           // 使用包含边框且不受悬停变换影响的原始高度。
           for (const placement of plan.items)
@@ -7821,6 +7863,7 @@ html[data-qc-active="true"]
             `${Math.ceil(bottom + plan.padBottom + plan.borders)}px`,
           );
         }
+        flushLayoutSheet();
         settle(anchor);
       }
 
