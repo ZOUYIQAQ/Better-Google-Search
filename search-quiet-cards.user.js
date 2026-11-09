@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.14
+// @version      1.9.16
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -153,7 +153,7 @@ dialog { overflow: hidden !important; padding: 8px !important; }
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.14";
+  const VERSION = "1.9.16";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -1099,7 +1099,7 @@ html[data-gqc-active="true"] .gqc-card .gqc-title-text {
   transition: background-size .36s cubic-bezier(.22,1,.36,1);
 }
 html[data-gqc-active="true"] .gqc-card:hover .gqc-title-text,
-html[data-gqc-active="true"] .gqc-card:focus-within .gqc-title-text {
+html[data-gqc-active="true"] .gqc-card:has(:focus-visible) .gqc-title-text {
   background-size: 100% 1px;
 }
 html[data-gqc-active="true"][data-gqc-motion="false"] .gqc-title-text {
@@ -1113,7 +1113,7 @@ html[data-gqc-active="true"][data-gqc-motion="false"] .gqc-title-text {
 html[data-gqc-active="true"] .gqc-card a:has(.gqc-title) {
   text-decoration: none !important;
 }
-html[data-gqc-active="true"] .gqc-card:focus-within {
+html[data-gqc-active="true"] .gqc-card:has(:focus-visible) {
   box-shadow: var(--gqc-shadow-hover);
 }
 html[data-gqc-active="true"] .gqc-card a:focus-visible {
@@ -1229,7 +1229,7 @@ html[data-gqc-active="true"][data-gqc-motion="false"] :is(.gqc-card, .gqc-page-l
     scrollbar-color: auto;
   }
   html[data-gqc-active="true"] .gqc-card:hover .gqc-title,
-  html[data-gqc-active="true"] .gqc-card:focus-within .gqc-title {
+  html[data-gqc-active="true"] .gqc-card:has(:focus-visible) .gqc-title {
     text-decoration: underline !important;
     text-decoration-thickness: 1px !important;
   }
@@ -6754,12 +6754,43 @@ if (document.readyState === "loading")
   document.addEventListener("DOMContentLoaded", 启动其他搜索站点, { once: true });
 else 启动其他搜索站点();
 
-// 普通结果卡片支持点击空白区域打开主链接，复杂模块保留独立交互。
+// 普通结果卡片支持短按空白区域打开主链接，长按、拖动和文字选择不跳转。
 (() => {
   const selector = ".gqc-card,.qc-card";
   const interactive =
     'a,button,input,textarea,select,summary,[role="button"],[role="menuitem"],[contenteditable="true"]';
-  // 仅接管普通卡片的非交互空白区域，不改写原始目标地址。
+  let press = null;
+
+  // 记录按下时间与坐标，不阻止浏览器原生选择文字。
+  function beginPress(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    const card = target?.closest(selector);
+    press = card
+      ? {
+          card,
+          id: event.pointerId,
+          time: performance.now(),
+          x: event.clientX,
+          y: event.clientY,
+          moved: false,
+          canceled: false,
+          selected: !!window.getSelection()?.toString().trim(),
+        }
+      : null;
+  }
+
+  // 拖动超过容差即视为选择或滚动，之后的合成click不能触发整卡跳转。
+  function movePress(event) {
+    if (!press || press.id !== event.pointerId) return;
+    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8) press.moved = true;
+  }
+
+  // 指针取消和上下文菜单均表示用户没有完成普通单击。
+  function cancelPress() {
+    if (press) press.canceled = true;
+  }
+
+  // 仅接管卡片内部非交互区域，优先使用实际标题链接，跳过无链接的隐藏标题。
   function openCard(event) {
     if (
       event.defaultPrevented ||
@@ -6774,20 +6805,44 @@ else 启动其他搜索站点();
       return;
     const target = event.target instanceof Element ? event.target : null;
     const card = target?.closest(selector);
-    if (!card || target.closest(interactive) || window.getSelection()?.toString().trim()) return;
+    const control = target?.closest(interactive);
+    if (!card) return;
+    const selecting = !!window.getSelection()?.toString().trim();
+    const heldOrDragged =
+      event.type !== "keydown" &&
+      press?.card === card &&
+      (press.canceled || press.moved || press.selected || performance.now() - press.time >= 500);
+    if (selecting || heldOrDragged) {
+      // 长按标题或链接也不能因随后产生的click误跳转，菜单按钮仍由原生处理。
+      if (control?.matches("a") && card.contains(control)) event.preventDefault();
+      return;
+    }
+    if (control && card.contains(control)) return;
     if (event.type === "keydown" && target !== card) return;
-    const heading = card.querySelector("h3,h2");
-    const link = heading?.closest("a[href]") || heading?.querySelector("a[href]");
+    const title = card.querySelector(".gqc-title,.qc-title");
+    const link =
+      title?.closest("a[href]") ||
+      title?.querySelector("a[href]") ||
+      card.querySelector("a[href]:has(h3),a[href]:has(h2),h3 a[href],h2 a[href]");
     if (!link || !/^https?:/.test(link.href)) return;
     event.preventDefault();
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.type === "auxclick")
       window.open(link.href, "_blank", "noopener");
     else link.click();
   }
-  document.addEventListener("click", openCard);
-  document.addEventListener("auxclick", (event) => {
-    if (event.button === 1) openCard(event);
-  });
+  // 提前捕获空白点击，避免原生结果容器在冒泡阶段截断事件。
+  document.addEventListener("pointerdown", beginPress, true);
+  document.addEventListener("pointermove", movePress, { capture: true, passive: true });
+  document.addEventListener("pointercancel", cancelPress, true);
+  document.addEventListener("contextmenu", cancelPress, true);
+  document.addEventListener("click", openCard, true);
+  document.addEventListener(
+    "auxclick",
+    (event) => {
+      if (event.button === 1) openCard(event);
+    },
+    true,
+  );
   document.addEventListener("keydown", openCard);
   const style = document.createElement("style");
   style.textContent = `
