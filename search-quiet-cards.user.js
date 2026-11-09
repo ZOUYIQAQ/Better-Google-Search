@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.16
+// @version      1.9.17
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -10,6 +10,7 @@
 // @match        https://www.google.com/search*
 // @include      /^https:\/\/(?:www\.)?google\.(?:com|[a-z]{2,3}|co\.[a-z]{2}|com\.[a-z]{2})\/search(?:\?.*)?$/
 // @run-at       document-start
+// @inject-into  content
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
@@ -37,9 +38,14 @@ function createLiveSettings(form, readDraft, saveDraft, showStatus) {
       try {
         const persistent = await saveDraft(value);
         if (current === revision)
-          showStatus(persistent ? "已自动保存并生效" : "已立即生效；当前环境不支持持久化保存");
+          showStatus(
+            persistent
+              ? "已自动保存并生效"
+              : "已立即生效；当前环境不支持持久化保存",
+          );
       } catch {
-        if (current === revision) showStatus("自动保存失败，请重新修改或关闭前重试。", true);
+        if (current === revision)
+          showStatus("自动保存失败，请重新修改或关闭前重试。", true);
       }
     });
     return chain;
@@ -96,6 +102,19 @@ function mountSettingsFrame(dialog, shadow, requestClose) {
   const css = document.createElement("style");
   css.textContent = `
 dialog { overflow: hidden !important; padding: 8px !important; }
+dialog[open] { animation: settings-enter 180ms cubic-bezier(.2, 0, 0, 1) both; }
+dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both; }
+@keyframes settings-enter {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes settings-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  dialog[open], dialog[open]::backdrop { animation: none !important; }
+}
 .settings-header { min-height: 56px; padding: 12px 20px 4px; }
 .settings-scroll {
   box-sizing: border-box;
@@ -153,7 +172,7 @@ dialog { overflow: hidden !important; padding: 8px !important; }
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.16";
+  const VERSION = "1.9.17";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -5449,7 +5468,8 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
     ];
     const A = adapters.find(
       (adapter) =>
-        adapter.hosts.includes(location.hostname) && adapter.paths.includes(location.pathname),
+        adapter.hosts.includes(location.hostname) &&
+        adapter.paths.includes(location.pathname),
     );
     if (!A) return;
     if (
@@ -5473,7 +5493,9 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
     const normalize = (value) => ({
       enabled: value.enabled !== false,
       motion: value.motion !== false,
-      color: /^#[0-9a-f]{6}$/i.test(value.color || "") ? value.color : DEFAULTS.color,
+      color: /^#[0-9a-f]{6}$/i.test(value.color || "")
+        ? value.color
+        : DEFAULTS.color,
       columns: Number(value.columns) === 2 ? 2 : 1,
       newTab: value.newTab !== false,
       autoLoad: value.autoLoad !== false,
@@ -5494,12 +5516,767 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
       scanTimer = 0,
       panel = null;
     const marks = new Set(),
+      movedModules = new Map(),
       links = new Map(),
       menus = [];
     const media = matchMedia("(prefers-color-scheme: dark)");
     const SPECIAL =
-      '.special-wrap,[role="dialog"],[role="listbox"],[role="menu"],video,iframe,form,[aria-expanded],[data-text-ad],.b_ad,.ec_tuiguang_pp,.ec-tuiguang';
-    const css = A.css;
+      '.special-wrap,.map220519,.map-area,[role="dialog"],[role="listbox"],[role="menu"],video,iframe,form,[aria-expanded],[data-text-ad],.b_ad,.ec_tuiguang_pp,.ec-tuiguang';
+    // 新版搜索页面的结构修正放在适配样式之后，统一三站的视觉基准。
+    const css = A.css + `
+/* 三站共用表面和布局边界，覆盖原生固定宽度而不移动原生节点。 */
+html[data-qc-active="true"] .qc-module {
+  box-sizing: border-box !important;
+  width: 100%;
+  min-width: 0 !important;
+  max-width: 100%;
+  margin: 0 0 20px !important;
+  padding: 24px !important;
+  border: 0 !important;
+  border-radius: 24px !important;
+  background: var(--qc-surface) !important;
+  color: var(--qc-ink) !important;
+  overflow-wrap: anywhere;
+  list-style: none;
+}
+html[data-qc-active="true"] :is(.qc-card, .qc-module) > * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+html[data-qc-active="true"] .qc-module :is(h2, h3) {
+  color: var(--qc-link);
+  line-height: 1.45;
+}
+html[data-qc-active="true"] .qc-module :is(a, button) {
+  accent-color: var(--qc-link);
+}
+html[data-qc-active="true"] .qc-module img {
+  max-width: 100%;
+  object-fit: cover;
+}
+html[data-qc-active="true"] .qc-empty {
+  display: none !important;
+}
+html[data-qc-active="true"] .qc-masonry-item {
+  transform: none !important;
+  animation: none !important;
+  transition: box-shadow 160ms ease !important;
+}
+html[data-qc-active="true"] .qc-auto-controls {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 24px auto !important;
+  padding: 16px !important;
+  text-align: center;
+  display: block;
+  clear: both;
+}
+html[data-qc-active="true"] .qc-auto-controls [hidden] {
+  display: none !important;
+}
+html[data-qc-active="true"] .qc-auto-controls p {
+  margin: 8px 0;
+  font-size: 13px;
+}
+html[data-qc-active="true"] .qc-auto-badge {
+  display: none;
+}
+/* 百度新版输入框与旧版虚拟表单互斥，防止出现第二个搜索框。 */
+html[data-qc-active="true"] #head:has(#chat-textarea) form.virtual-form {
+  display: none !important;
+}
+html[data-qc-active="true"] #container {
+  box-sizing: border-box !important;
+  display: block !important;
+  width: min(var(--qc-width), calc(100% - 48px)) !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 28px auto !important;
+  padding: 0 !important;
+}
+html[data-qc-active="true"] #container #content_left {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  float: none !important;
+}
+html[data-qc-active="true"] #head {
+  position: relative !important;
+  height: auto !important;
+  background: var(--qc-bg) !important;
+}
+html[data-qc-active="true"] #head .s_form_wrapper {
+  width: min(var(--qc-width), calc(100vw - 48px)) !important;
+  margin: 24px auto !important;
+  padding: 0 !important;
+  position: relative !important;
+}
+html[data-qc-active="true"] #head #main-wrapper {
+  width: 100% !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"] #head:has(#chat-textarea) #result_logo {
+  display: block !important;
+  position: static !important;
+  margin: 0 auto 20px !important;
+}
+html[data-qc-active="true"] #head #chat-input-area {
+  width: 100% !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"]
+  #head
+  :is(.chat-input-wrapper, .chat-input-container, #chat-input-main) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+  background: var(--qc-surface) !important;
+  border-radius: 28px !important;
+}
+html[data-qc-active="true"] #chat-textarea {
+  background: transparent !important;
+  color: var(--qc-ink) !important;
+}
+html[data-qc-active="true"] #s_tab {
+  margin: 20px auto !important;
+  width: min(var(--qc-width), calc(100% - 48px)) !important;
+  padding: 0 0 12px !important;
+}
+html[data-qc-active="true"] #page {
+  width: 100% !important;
+  margin: 24px auto !important;
+  padding: 0 !important;
+  text-align: center;
+}
+/* 必应所有结果祖先使用同一宽度，避免内联块撑出视口。 */
+html[data-qc-active="true"] #b_content {
+  box-sizing: border-box !important;
+  width: min(var(--qc-width), calc(100% - 48px)) !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 28px auto !important;
+  padding: 0 !important;
+  display: block !important;
+}
+html[data-qc-active="true"] #b_content > main,
+html[data-qc-active="true"] #b_content #b_mcw,
+html[data-qc-active="true"] #b_content #b_results {
+  box-sizing: border-box !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  float: none !important;
+}
+html[data-qc-active="true"] #b_topw {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"] #b_topw:not(:has(> li:not(.qc-ad-hidden))) {
+  display: none !important;
+}
+html[data-qc-active="true"] #sb_form .b_searchboxForm {
+  display: flex !important;
+  align-items: center !important;
+  height: 56px !important;
+  padding: 0 16px !important;
+}
+html[data-qc-active="true"] #sb_form_q {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  width: 0 !important;
+  margin: 0 !important;
+  height: 48px !important;
+}
+html[data-qc-active="true"] #sb_form .b_searchboxForm > :not(#sb_form_q) {
+  flex-shrink: 0;
+}
+/* 搜狗新版页面保留原生 React 模块，把广告和固定宽度留白移出布局。 */
+html[data-qc-active="true"] #main.main {
+  box-sizing: border-box !important;
+  width: min(var(--qc-width), calc(100% - 48px)) !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 28px auto !important;
+  padding: 0 !important;
+  display: block !important;
+}
+html[data-qc-active="true"] #main .js-page-results,
+html[data-qc-active="true"] #main .results {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  float: none !important;
+}
+html[data-qc-active="true"] .header .centerBox {
+  width: min(var(--qc-width), calc(100vw - 48px)) !important;
+  margin: 24px auto !important;
+  padding: 0 !important;
+}
+html[data-qc-active="true"] .header .querybox {
+  display: flex !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"] .header :is(.qborder, .qborder2) {
+  flex: 1;
+  width: auto !important;
+  border: 0 !important;
+  background: var(--qc-surface) !important;
+  border-radius: 28px;
+}
+html[data-qc-active="true"] .header #upquery {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: 56px !important;
+  padding: 0 24px !important;
+  background: transparent !important;
+  color: var(--qc-ink) !important;
+}
+html[data-qc-active="true"] .header .sec-input {
+  border: 0 !important;
+}
+html[data-qc-active="true"] #container {
+  display: flex !important;
+  flex-direction: column !important;
+}
+html[data-qc-active="true"] #container > .qc-auto-controls {
+  order: 2;
+}
+html[data-qc-active="true"] #container #content_right {
+  order: 5;
+  width: 100% !important;
+  margin: 24px 0 !important;
+}
+html[data-qc-active="true"] #head .head_wrapper {
+  width: 100% !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"] #head .s_form {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+html[data-qc-active="true"] #head .s_form_wrapper {
+  margin: 24px auto !important;
+}
+html[data-qc-active="true"] #head #result_logo {
+  width: 104px !important;
+}
+html[data-qc-active="true"]
+  #head
+  :is([class*="aisearch-btn"], [class*="search-btn"]) {
+  background: var(--qc-link) !important;
+  color: var(--qc-bg) !important;
+  border-radius: 24px !important;
+}
+html[data-qc-active="true"] #b_content #b_results > :is(.qc-card, .qc-module) {
+  width: 100%;
+  margin: 0 0 20px !important;
+  padding: 24px !important;
+  border: 0 !important;
+  border-radius: 24px !important;
+  background: var(--qc-surface) !important;
+  color: var(--qc-ink) !important;
+}
+html[data-qc-active="true"] #b_content :is(#b_results, #b_topw, main, #b_mcw) {
+  background: transparent !important;
+}
+html[data-qc-active="true"]
+  #b_results
+  > :is(.qc-card, .qc-module)
+  :is(h2, h3)
+  a {
+  color: var(--qc-link) !important;
+}
+html[data-qc-active="true"] #wrapper #main.main {
+  margin: 28px auto !important;
+  float: none !important;
+  left: auto !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .header-box {
+  width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .logo {
+  position: static !important;
+  display: block !important;
+  width: 115px;
+  margin: 0 auto 20px !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header form:has(#upquery) {
+  width: 100% !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header #querybox_up {
+  width: 100% !important;
+  margin: 0 !important;
+  border: 0 !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header #upquery {
+  max-width: none !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header #searchBtn {
+  box-sizing: border-box;
+  height: 56px;
+  width: 96px;
+  border: 0 !important;
+  border-radius: 28px;
+  margin-left: 8px;
+  background: var(--qc-link) !important;
+  color: var(--qc-bg) !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .top-bar {
+  position: fixed;
+  top: 16px;
+  right: 24px;
+}
+html[data-qc-active="true"] body {
+  min-width: 0 !important;
+}
+html[data-qc-active="true"] #wrapper,
+html[data-qc-active="true"] #wrapper_wrapper {
+  min-width: 0 !important;
+  width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"] #content_left > :is(.qc-card, .qc-module) {
+  width: 100% !important;
+}
+html[data-qc-active="true"] #head .s_form_wrapper {
+  left: auto !important;
+  right: auto !important;
+  transform: none !important;
+}
+html[data-qc-active="true"] #head .s_form {
+  width: 100% !important;
+  left: auto !important;
+}
+html[data-qc-active="true"] #head #main-wrapper {
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+}
+html[data-qc-active="true"] #head #input-root {
+  width: 100% !important;
+}
+html[data-qc-active="true"] #head .head_wrapper .s_form .s_form_wrapper {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+html[data-qc-active="true"] #wrapper #main.main {
+  position: relative !important;
+  padding: 0 !important;
+}
+html[data-qc-active="true"] #wrapper #main.main .js-page-results {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+}
+html[data-qc-active="true"] #wrapper #main.main .results {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+}
+html[data-qc-active="true"]
+  #b_content
+  #b_results
+  > :is(.qc-card, .qc-module)
+  :is(.b_algowide, .b_wikiRichcard) {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+html[data-qc-active="true"]
+  #b_results
+  .qc-module
+  :is(.b_wikiRichcard, .b_wiki_bg_color_17) {
+  background-color: transparent !important;
+}
+html[data-qc-active="true"] #b_content #b_tween {
+  background: transparent !important;
+}
+html[data-qc-active="true"] #b_content #b_mcw {
+  border: 0 !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .nav {
+  display: block !important;
+  width: min(var(--qc-width), calc(100% - 48px)) !important;
+  margin: 20px auto !important;
+}
+/* 搜索框、导航与结果区保持共同的居中轴线。 */
+html[data-qc-active="true"] {
+  --qc-width: 820px;
+}
+@media (min-width: 1100px) {
+  html[data-qc-active="true"][data-qc-columns="2"] {
+    --qc-width: 1200px;
+  }
+}
+html[data-qc-active="true"]
+  :is(#sogou_wrap_id, .header .header-box, .header .centerBox) {
+  min-width: 0 !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id {
+  width: 100% !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header {
+  position: relative !important;
+  top: auto !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .querybox {
+  box-sizing: border-box;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .qborder {
+  min-width: 0 !important;
+  flex-basis: 0 !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .searchnav {
+  position: static !important;
+  display: flex !important;
+  justify-content: center;
+  flex-wrap: wrap;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 20px 0 0 !important;
+  padding: 0 !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .searchnav li {
+  margin: 0 12px 8px !important;
+}
+html[data-qc-active="true"] #head :is(#u, #u1) {
+  position: absolute !important;
+  left: auto !important;
+  right: 24px !important;
+  top: 16px !important;
+}
+html[data-qc-active="true"] #head .s_form_wrapper {
+  width: min(var(--qc-width), calc(100vw - 48px)) !important;
+}
+html[data-qc-active="true"] #head #main-wrapper {
+  float: none !important;
+}
+html[data-qc-active="true"] #head #chat-input-main {
+  border: 0 !important;
+}
+html[data-qc-active="true"] #s_tab {
+  display: flex !important;
+  justify-content: center !important;
+  flex-wrap: wrap;
+  height: auto !important;
+  gap: 24px;
+}
+html[data-qc-active="true"] #s_tab :is(a, b) {
+  position: relative !important;
+  display: inline-block !important;
+  float: none !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"]
+  #content_left
+  > :is(.qc-card, .qc-module)
+  :is(h3, .t)
+  a,
+html[data-qc-active="true"] #main .qc-module h3 a {
+  color: var(--qc-link) !important;
+  text-decoration: none !important;
+}
+html[data-qc-active="true"] :is(.qc-card, .qc-module) :is(h2, h3) a:hover {
+  text-decoration: underline !important;
+  text-decoration-thickness: 1px !important;
+  text-underline-offset: 4px;
+}
+html[data-qc-active="true"]
+  :is(#content_left, #b_results, .results)
+  > .qc-empty {
+  display: none !important;
+}
+html[data-qc-active="true"] #container #rs {
+  width: 100% !important;
+}
+html[data-qc-active="true"] #container .qc-related {
+  background: var(--qc-surface) !important;
+}
+html[data-qc-active="true"] #b_content #b_results > :is(.qc-card, .qc-module) {
+  overflow: clip;
+}
+html[data-qc-active="true"] #b_content #b_results .b_pag {
+  width: 100% !important;
+  margin: 24px auto !important;
+  padding: 0 !important;
+  text-align: center;
+}
+html[data-qc-active="true"] .qc-auto-controls a {
+  margin-left: 16px;
+}
+
+html[data-qc-active="true"] #page [class*="page-inner"],
+html[data-qc-active="true"] .foot-inner {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+html[data-qc-active="true"] #page [class*="page-inner"] {
+  display: flex !important;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+html[data-qc-active="true"] #page a {
+  margin: 0 !important;
+}
+html[data-qc-active="true"] #head #result_logo {
+  height: 34px !important;
+  width: 104px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+html[data-qc-active="true"] #head #result_logo img {
+  display: none !important;
+}
+html[data-qc-active="true"] #head #result_logo img.index-logo-src {
+  display: block !important;
+  width: 104px !important;
+  height: 34px !important;
+}
+html[data-qc-active="true"] #b_header #sb_form .b_logoArea {
+  position: static !important;
+  display: block !important;
+  width: 40px !important;
+  margin: 0 auto 20px !important;
+}
+html[data-qc-active="true"] .qc-ai > div {
+  max-width: 100% !important;
+}
+html[data-qc-active="true"] #content_left .qc-module [class*="card-border"] {
+  border: 0 !important;
+  background: transparent !important;
+}
+html[data-qc-active="true"]
+  #content_left
+  .qc-module
+  :is(input[type="text"], button) {
+  accent-color: var(--qc-link);
+}
+html[data-qc-active="true"] #sogou_wrap_id .header {
+  padding: 28px 0 0 !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .centerBox {
+  margin: 0 auto !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .header-box {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch;
+  height: auto !important;
+  min-height: 0 !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header #fankuiform {
+  display: none !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .logo {
+  order: 0;
+  flex: none;
+  height: 36px !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header form:has(#upquery) {
+  order: 1;
+  display: block !important;
+  position: static !important;
+}
+html[data-qc-active="true"] #sogou_wrap_id .header .searchnav {
+  order: 2;
+}
+html[data-qc-active="true"] #b_results .b_wikiGbModCards {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 0 !important;
+  width: 100% !important;
+}
+html[data-qc-active="true"] #b_results .b_wikiGbModCards > * {
+  width: 100% !important;
+  margin: 0 !important;
+  min-width: 0;
+}
+html[data-qc-active="true"]
+  #b_results
+  .b_wikiGbModCards
+  :is(.b_acf_card, .b_wikiGbModImageCard) {
+  width: 100% !important;
+  height: 200px !important;
+  border-radius: 16px;
+  overflow: hidden;
+}
+html[data-qc-active="true"] #b_results .b_wikiGbModCards .b_acf_card {
+  background: var(--qc-interaction) !important;
+  color: var(--qc-ink) !important;
+}
+html[data-qc-active="true"] #b_results .b_wikiGbMod {
+  width: 100% !important;
+}
+html[data-qc-active="true"] #b_results .b_wikiGbMod img {
+  object-fit: cover;
+}
+html[data-qc-active="true"] #b_content :is(#b_tween, .b_tween) {
+  background: transparent !important;
+}
+
+html[data-qc-active="true"] #head .s_form,
+html[data-qc-active="true"] #head .head_wrapper {
+  position: static !important;
+  top: auto !important;
+  transform: none !important;
+}
+html[data-qc-active="true"] #head .s_form_wrapper {
+  top: auto !important;
+  display: block !important;
+}
+html[data-qc-active="true"] #head #chat-submit-button {
+  background: var(--qc-link) !important;
+  color: var(--qc-bg) !important;
+  border: 0 !important;
+  border-radius: 24px !important;
+}
+html[data-qc-active="true"] #head #chat-submit-button::before,
+html[data-qc-active="true"] #head #chat-submit-button::after {
+  background: none !important;
+}
+html[data-qc-active="true"]
+  :is(#s_tab, .header .searchnav, #b_header .b_scopebar) {
+  border-bottom: 1px solid var(--qc-line) !important;
+  padding-bottom: 12px !important;
+}
+html[data-qc-active="true"] #s_tab b {
+  color: var(--qc-link) !important;
+}
+html[data-qc-active="true"] #s_tab b::after {
+  background: var(--qc-link) !important;
+}
+
+html[data-qc-active="true"] .qc-card :is(h2, h3) > a {
+  display: inline !important;
+  text-decoration: none !important;
+  background-image: linear-gradient(var(--qc-link), var(--qc-link));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 1px;
+  box-decoration-break: clone;
+  transition: background-size 180ms ease;
+}
+html[data-qc-active="true"] .qc-card:hover :is(h2, h3) > a,
+html[data-qc-active="true"] .qc-card:has(:focus-visible) :is(h2, h3) > a {
+  background-size: 100% 1px;
+  text-decoration: none !important;
+}
+html[data-qc-active="true"][data-qc-motion="false"] .qc-card :is(h2, h3) > a {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-qc-active="true"] .qc-card :is(h2, h3) > a {
+    transition: none;
+  }
+}
+
+html[data-qc-active="true"]
+  .qc-top-module
+  :is(#copans_container, #ca_main, .answer_container, #b_wpt_container) {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  background: transparent !important;
+}
+html[data-qc-active="true"] .qc-top-module:not(.qc-ai) .mgrid {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px;
+}
+html[data-qc-active="true"] .qc-top-module:not(.qc-ai) .mgrid > .slide {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  left: auto !important;
+  top: auto !important;
+  margin: 0 !important;
+}
+html[data-qc-active="true"]
+  .qc-top-module
+  :is(.b_wpt_bl, .b_wpt_bl_h, .lite-mag-card) {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+html[data-qc-active="true"] .qc-top-module {
+  overflow: clip;
+}
+html[data-qc-active="true"] .qc-ai [class*="frame__saFrame"] {
+  min-height: 0 !important;
+  height: auto !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+html[data-qc-active="true"],
+html[data-qc-active="true"] body {
+  overflow-anchor: none !important;
+}
+html[data-qc-active="true"] #head:has(#chat-textarea) .s_form_wrapper {
+  padding-top: 54px !important;
+}
+html[data-qc-active="true"] #head:has(#chat-textarea) #result_logo {
+  position: absolute !important;
+  top: 0 !important;
+  left: 50% !important;
+  right: auto !important;
+  margin: 0 !important;
+  transform: translateX(-50%) !important;
+}
+html[data-qc-active="true"] .qc-module .cos-fold-switch {
+  background: linear-gradient(transparent, var(--qc-surface) 50%) !important;
+  color: var(--qc-link) !important;
+}
+html[data-qc-active="true"] .qc-module .cos-fold-switch::before {
+  background: none !important;
+}
+
+html[data-qc-active="true"] #sogou_wrap_id {
+  padding-top: 0 !important;
+}
+html[data-qc-active="true"] #head:has(#chat-textarea) .s_form_wrapper {
+  box-sizing: border-box !important;
+  height: auto !important;
+  min-height: 110px !important;
+}
+html[data-qc-active="true"] #head:has(#chat-textarea) #main-wrapper {
+  min-height: 56px !important;
+}
+html[data-qc-active="true"] #head:has(#chat-textarea) {
+  min-height: 140px !important;
+}
+html[data-qc-active="true"] .qc-module input[type="submit"] {
+  background: var(--qc-link) !important;
+  color: var(--qc-bg) !important;
+  border: 0 !important;
+  border-radius: 16px !important;
+}
+
+html[data-qc-active="true"]
+  :is(.qc-module, .qc-card)
+  :is(input[type="button"], input[type="submit"], .btn-orange, .sm-btn) {
+  background: var(--qc-link) !important;
+  background-image: none !important;
+  color: var(--qc-bg) !important;
+  border: 0 !important;
+  border-radius: 16px !important;
+}
+`;
     const style = document.createElement("style");
     style.id = `${ID}-style`;
     style.textContent = css;
@@ -5507,6 +6284,13 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
     const palette = document.createElement("style");
     palette.id = `${ID}-palette`;
     (document.head || root).append(palette);
+
+    // 原生搜索可能重建头部；恢复同一份样式，避免卡片标记保留而主题丢失。
+    function ensureStyles() {
+      const head = document.head || root;
+      if (!style.isConnected) head.append(style);
+      if (!palette.isConnected) head.append(palette);
+    }
     const mark = (el, name) => {
       if (el && !el.classList.contains(name)) {
         el.classList.add(name);
@@ -5527,7 +6311,9 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
 
     // 读取当前搜索关键词。
     function query(url) {
-      return A.query.map((key) => url.searchParams.get(key)).find(Boolean) || "";
+      return (
+        A.query.map((key) => url.searchParams.get(key)).find(Boolean) || ""
+      );
     }
 
     // 检查当前地址是否属于支持的网页搜索。
@@ -5559,11 +6345,22 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
         "bs",
         "ie",
         "usm",
+        "rdr",
+        "rdrig",
+        "FPIG",
       ]);
       const analytics =
         /^(rsv_|eqid$|cvid$|sp$|pq$|sc$|qs$|sk$|ghsh$|ghacc$|ghpl$|sugsuv$|sugtime$|sut$)/i;
       const pairs = [...url.searchParams]
-        .filter(([k]) => !ignore.has(k) && !A.query.includes(k) && !analytics.test(k))
+        .filter(
+          ([k, v]) =>
+            v !== "" &&
+            !ignore.has(k) &&
+            !A.query.includes(k) &&
+            !(A.namespace === "baidu" &&
+              (["f", "rqlang"].includes(k) || (k === "tn" && v === "baidu"))) &&
+            !analytics.test(k),
+        )
         .sort(([a], [b]) => a.localeCompare(b));
       return JSON.stringify([query(url), pairs]);
     }
@@ -5571,16 +6368,28 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
     // 解析并校验分页偏移量。
     function offset(url) {
       const value = url.searchParams.get(A.page);
-      return value === null ? A.initial : /^\d+$/.test(value) ? Number(value) : NaN;
+      return value === null
+        ? A.initial
+        : /^\d+$/.test(value)
+          ? Number(value)
+          : NaN;
     }
 
     // 校验外链，保留站点原有跳转地址。
     function external(href, base = location.href) {
       try {
         const url = new URL(href, base);
-        if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+        if (
+          !["http:", "https:"].includes(url.protocol) ||
+          url.username ||
+          url.password
+        )
           return null;
-        if (A.hosts.includes(url.hostname) && !A.redirects.includes(url.pathname)) return null;
+        if (
+          A.hosts.includes(url.hostname) &&
+          !A.redirects.includes(url.pathname)
+        )
+          return null;
         return url;
       } catch {
         return null;
@@ -5589,11 +6398,19 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
 
     // 识别能够安全卡片化的普通网页结果。
     function normalCard(node) {
-      if (!node.matches(A.card) || node.matches(SPECIAL) || node.querySelector(SPECIAL))
+      if (
+        !node.matches(A.card) ||
+        node.matches(SPECIAL) ||
+        node.querySelector(SPECIAL)
+      )
         return false;
       if (node.querySelectorAll("h2,h3").length !== 1) return false;
       const title = node.querySelector(A.heading);
-      return !!(title && external(title.getAttribute("href")) && clean(title.textContent));
+      return !!(
+        title &&
+        external(title.getAttribute("href")) &&
+        clean(title.textContent)
+      );
     }
 
     // 恢复链接原有的打开方式。
@@ -5605,7 +6422,9 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
             ? link.removeAttribute("target")
             : link.setAttribute("target", old.target);
         if (link.getAttribute("rel") === old.writtenRel)
-          old.rel === null ? link.removeAttribute("rel") : link.setAttribute("rel", old.rel);
+          old.rel === null
+            ? link.removeAttribute("rel")
+            : link.setAttribute("rel", old.rel);
         links.delete(link);
       }
     }
@@ -5623,19 +6442,28 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
           keep.add(link);
           let old = links.get(link);
           if (!old) {
-            old = { target: link.getAttribute("target"), rel: link.getAttribute("rel") };
+            old = {
+              target: link.getAttribute("target"),
+              rel: link.getAttribute("rel"),
+            };
             links.set(link, old);
           } else {
-            if (link.getAttribute("target") !== "_blank") old.target = link.getAttribute("target");
-            if (link.getAttribute("rel") !== old.writtenRel) old.rel = link.getAttribute("rel");
+            if (link.getAttribute("target") !== "_blank")
+              old.target = link.getAttribute("target");
+            if (link.getAttribute("rel") !== old.writtenRel)
+              old.rel = link.getAttribute("rel");
           }
           old.writtenRel = [
             ...new Set(
-              (link.getAttribute("rel") || "").split(/\s+/).filter(Boolean).concat("noopener"),
+              (link.getAttribute("rel") || "")
+                .split(/\s+/)
+                .filter(Boolean)
+                .concat("noopener"),
             ),
           ].join(" ");
           if (link.target !== "_blank") link.setAttribute("target", "_blank");
-          if (link.getAttribute("rel") !== old.writtenRel) link.setAttribute("rel", old.writtenRel);
+          if (link.getAttribute("rel") !== old.writtenRel)
+            link.setAttribute("rel", old.writtenRel);
         }
       restoreLinks(keep);
     }
@@ -5645,8 +6473,19 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
       masonry.stop();
       loader.stop();
       restoreLinks();
+      for (const [node, original] of movedModules) {
+        if (original.parent.isConnected)
+          original.parent.insertBefore(
+            node,
+            original.next?.parentNode === original.parent
+              ? original.next
+              : null,
+          );
+      }
+      movedModules.clear();
       for (const el of marks)
-        for (const c of [...el.classList]) if (c.startsWith("qc-")) el.classList.remove(c);
+        for (const c of [...el.classList])
+          if (c.startsWith("qc-")) el.classList.remove(c);
       marks.clear();
       root.removeAttribute("data-qc-active");
       currentScope = null;
@@ -5658,8 +6497,11 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
         if (palette.textContent) palette.textContent = "";
         return;
       }
-      const rgb = [1, 3, 5].map((i) => parseInt(config.color.slice(i, i + 2), 16));
-      const mix = (v, r) => `rgb(${rgb.map((x) => Math.round(x * r + v * (1 - r))).join(",")})`;
+      const rgb = [1, 3, 5].map((i) =>
+        parseInt(config.color.slice(i, i + 2), 16),
+      );
+      const mix = (v, r) =>
+        `rgb(${rgb.map((x) => Math.round(x * r + v * (1 - r))).join(",")})`;
       const vars = (map) =>
         Object.entries(map)
           .map(([k, v]) => `--qc-${k}:${v}`)
@@ -5696,6 +6538,7 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
     // 重新识别结果与复杂模块并更新布局。
     function scan() {
       scanTimer = 0;
+      ensureStyles();
       root.dataset.qcAds = String(config.enabled && config.blockAds);
       const scope = document.querySelector(A.scope);
       active = config.enabled && allowed(new URL(location.href)) && !!scope;
@@ -5706,22 +6549,76 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
       if (currentScope && currentScope !== scope) clear();
       currentScope = scope;
       root.dataset.qcActive = "true";
+      root.dataset.qcEngine = A.namespace;
       root.dataset.qcTheme = media.matches ? "dark" : "light";
       root.dataset.qcMotion = String(config.motion);
       root.dataset.qcColumns = String(config.columns);
       applyPalette();
       mark(scope, "qc-results");
+      // 推荐词模块保留原生节点和监听器，统一进入结果瀑布流。
+      const relatedSelector =
+        A.namespace === "baidu"
+          ? "#rs_new,#rs"
+          : A.namespace === "sogou"
+            ? "#sogou_vr_30010468_-2"
+            : null;
+      if (relatedSelector) {
+        for (const node of document.querySelectorAll(relatedSelector)) {
+          if (!scope.contains(node) && clean(node.innerText)) {
+            movedModules.set(node, {
+              parent: node.parentNode,
+              next: node.nextSibling,
+            });
+            scope.append(node);
+          }
+          mark(node, "qc-related");
+        }
+      }
+      // 必应把知识、天气和 Copilot 放在独立顶部容器，保留节点接入统一结果流。
+      if (A.namespace === "bing") {
+        for (const node of document.querySelectorAll("#b_topw > li")) {
+          if (node.matches(".b_ad,.qc-ad-hidden") || node.querySelector(".b_ad,.va_gc_slug_badge,.b_ad_description")) continue;
+          if (!clean(node.innerText)) continue;
+          movedModules.set(node, { parent: node.parentNode, next: node.nextSibling });
+          mark(node, "qc-top-module");
+          // 延迟出现的地图和知识模块放到流尾，避免插入正在阅读的卡片上方。
+          // 真正的 AI 回答仍由布局排序置顶。
+          scope.append(node);
+        }
+      }
       for (const child of scope.children) {
         if (child.classList.contains("qc-auto-card")) continue;
-        if (normalCard(child)) {
-          if (!child.classList.contains("qc-card")) {
-            mark(child, "qc-card");
-            if (config.motion && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
-              mark(child, "qc-enter");
-              setTimeout(() => child.classList.remove("qc-enter"), 450);
-            }
-          }
-        } else if (child.classList.contains("qc-card")) child.classList.remove("qc-card");
+        if (
+          !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(child.tagName)
+        ) {
+          const meaningful =
+            clean(child.innerText) ||
+            child.querySelector("img,video,canvas,iframe");
+          child.classList.toggle("qc-empty", !meaningful);
+          marks.add(child);
+        }
+        const ordinary = normalCard(child);
+        const ai = child.matches(
+          '[tpl="new_baikan_index"],[id^="sogou_vr_30010556_"]',
+        );
+        const copilot = child.classList.contains("qc-top-module") && !!child.querySelector(".ca_top_sec");
+        child.classList.toggle("qc-ai", ai || copilot);
+        if (ai) {
+          const answer = [...child.querySelectorAll('.cosd-markdown-content,[class*="markdown__contentBlock"]')].some((node) => {
+            const content = node.cloneNode(true);
+            for (const citation of content.querySelectorAll("a,button,script,style")) citation.remove();
+            return clean(content.textContent).length >= 40;
+          });
+          child.classList.toggle("qc-empty", !answer);
+        }
+        const module =
+          !ordinary &&
+          child.matches(
+            ".result-op,.reactResult,.vrwrap,.rb,.b_algo,.b_ans:not(.b_canvas),.middle-better-hintBox,.qc-related,.qc-top-module",
+          );
+        child.classList.toggle("qc-card", ordinary);
+        child.classList.toggle("qc-module", module);
+        if (ordinary || module) marks.add(child);
       }
       for (const [selector, name] of [
         [A.side, "qc-side"],
@@ -5750,7 +6647,8 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
             `${a.textContent} ${a.getAttribute("aria-label") || ""} ${a.title}`,
           ),
       );
-      if (!link) return { url: null, reason: "没有找到可识别的下一页，已停止拼接。" };
+      if (!link)
+        return { url: null, reason: "没有找到可识别的下一页，已停止拼接。" };
       try {
         const url = new URL(link.getAttribute("href"), base);
         url.hash = "";
@@ -5766,7 +6664,10 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
           offset(url) <= offset(base) ||
           seen.has(offset(url))
         )
-          return { url: null, reason: "下一页地址或搜索条件不匹配，请使用原生分页。" };
+          return {
+            url: null,
+            reason: "下一页地址或搜索条件不匹配，请使用原生分页。",
+          };
         return { url, reason: "" };
       } catch {
         return { url: null, reason: "无法识别下一页地址，请使用原生分页。" };
@@ -5817,9 +6718,16 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
       // 更新加载进度、暂停原因及可用操作。
       function status(value, text, retry = false) {
         value.label.textContent = text;
+        value.label.hidden = !value.loading && !value.paused && !!value.next;
+        value.controls.title = text;
         value.button.disabled = value.loading || !value.next;
         value.button.textContent = retry ? "重试下一页" : "加载下一页";
-        value.full.hidden = !value.next;
+        value.full.hidden = !value.next || !value.paused;
+        value.button.hidden = !value.next;
+        if (!value.next && !value.paused && !value.loading) {
+          value.label.textContent = "已显示本页结果";
+          value.label.hidden = A.namespace === "sogou";
+        }
         if (value.next) value.full.href = value.next.href;
       }
 
@@ -5827,21 +6735,32 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
       function card(entry, page) {
         const el = make("article", null, "qc-card qc-auto-card");
         // 必应使用列表，追加合法列表项并保留原生节点。
-        const item = A.namespace === "bing" ? make("li", null, "qc-card qc-auto-card") : el;
+        const item =
+          A.namespace === "bing"
+            ? make("li", null, "qc-card qc-auto-card")
+            : el;
         const title = make("h3"),
           a = make("a", entry.title);
         a.href = entry.url;
         title.append(a);
         item.append(make("p", entry.host, "qc-url"), title);
         if (entry.snippet) item.append(make("p", entry.snippet));
-        item.append(make("div", `追加第 ${page - 1} 页 · 普通网页结果`, "qc-auto-badge"));
+        item.append(
+          make("div", `追加第 ${page - 1} 页 · 普通网页结果`, "qc-auto-badge"),
+        );
         return item;
       }
 
       // 请求下一页，校验响应并过滤重复结果。
       async function load(manual = false) {
         const value = s;
-        if (!value || !live(value) || value.loading || !value.next || (!manual && value.paused))
+        if (
+          !value ||
+          !live(value) ||
+          value.loading ||
+          !value.next ||
+          (!manual && value.paused)
+        )
           return;
         value.loading = true;
         value.paused = false;
@@ -5874,10 +6793,14 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
             doc.querySelector(
               'form[action*="captcha"],#captcha,#b_captcha,#seccode,[id*="captcha"]',
             ) ||
-            /安全验证|人机验证|请输入验证码|unusual traffic|verify you are human/i.test(doc.title)
+            /安全验证|人机验证|请输入验证码|unusual traffic|verify you are human/i.test(
+              doc.title,
+            )
           )
             throw Error("检测到验证页面");
-          const incoming = entries(doc, target.href).filter((entry) => !value.keys.has(entry.key));
+          const incoming = entries(doc, target.href).filter(
+            (entry) => !value.keys.has(entry.key),
+          );
           if (!incoming.length) throw Error("未发现可安全拼接的新网页结果");
           value.seen.add(offset(target));
           value.page++;
@@ -5890,14 +6813,18 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
             fragment.append(node);
           }
           // 保留原生分页位置，在其前方添加新的结果。
-          const pager = [...value.scope.children].find((el) => el.matches(A.pager));
+          const pager = [...value.scope.children].find((el) =>
+            el.matches(A.pager),
+          );
           value.scope.insertBefore(fragment, pager || null);
           const next = nextPage(doc, target, value.initial, value.seen);
           value.next = next.url;
           value.loading = false;
           status(
             value,
-            value.next ? `已拼接 ${value.page} 页。继续向下滚动可加载下一页。` : next.reason,
+            value.next
+              ? `已拼接 ${value.page} 页。继续向下滚动可加载下一页。`
+              : next.reason,
           );
           schedule();
         } catch (error) {
@@ -5912,7 +6839,11 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
           }
         } finally {
           clearTimeout(timeout);
-          if (s === value) value.loading = false;
+          if (s === value) {
+            value.loading = false;
+            if (!value.scope.classList.contains("qc-masonry-host"))
+              checkBottom();
+          }
         }
       }
 
@@ -5950,11 +6881,7 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
         const full = make("a", "打开完整下一页");
         full.target = "_blank";
         full.rel = "noopener";
-        const note = make(
-          "p",
-          "仅拼接普通网页文字。AI、视频、问答、图片等交互模块请打开完整分页。",
-        );
-        controls.append(label, button, make("span", "　"), full, note);
+        controls.append(label, button, full);
         scope.after(controls);
         s = {
           scope,
@@ -5973,31 +6900,56 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
           paused: false,
         };
         button.addEventListener("click", () => load(true));
-        status(s, next.url ? "向下滚动到结果底部，或点按钮加载下一页。" : next.reason);
+        status(
+          s,
+          next.url ? "向下滚动到结果底部，或点按钮加载下一页。" : next.reason,
+        );
         lastY = scrollY;
+      }
+      // 保留向下加载意图，布局校正不会要求用户重新上下滚动。
+      function checkBottom() {
+        if (frame || !goingDown || !s || document.hidden) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          if (
+            !goingDown ||
+            !s ||
+            !live(s) ||
+            document.hidden ||
+            s.loading ||
+            s.paused ||
+            !s.next
+          )
+            return;
+          const box = s.controls.getBoundingClientRect();
+          // 快速滚动可能越过加载条；仍应续页，不要求先向上再向下滚动。
+          if (box.width > 0 && box.top < innerHeight + 700)
+            void load();
+        });
       }
       addEventListener(
         "scroll",
         () => {
-          const y = scrollY,
-            down = y > lastY + 1;
+          const y = scrollY;
+          if (y > lastY + 1) goingDown = true;
+          else if (y < lastY - 1) goingDown = false;
           lastY = y;
-          goingDown = down;
-          if (!down || frame || !s || document.hidden) return;
-          frame = requestAnimationFrame(() => {
-            frame = 0;
-            if (!goingDown || !s || !live(s) || document.hidden || s.loading || s.paused || !s.next)
-              return;
-            const box = s.controls.getBoundingClientRect();
-            if (box.width > 0 && box.top < innerHeight + 700 && box.bottom > 0) void load();
-          });
+          checkBottom();
+        },
+        { passive: true },
+      );
+      addEventListener(
+        "wheel",
+        (event) => {
+          if (event.deltaY > 0) goingDown = true;
+          else if (event.deltaY < 0) goingDown = false;
+          checkBottom();
         },
         { passive: true },
       );
       document.addEventListener("qc:masonry-settled", () => {
         lastY = scrollY;
-        if (frame) cancelAnimationFrame(frame);
-        frame = 0;
+        checkBottom();
       });
       return { sync, stop };
     }
@@ -6007,7 +6959,9 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
     // 管理双列布局和原生样式恢复，不移动结果节点。
     function createMasonryLayout(canRun, options = {}) {
       const gap = Number.isFinite(options.gap) ? Math.max(0, options.gap) : 20;
-      const minWidth = Number.isFinite(options.minWidth) ? options.minWidth : 1100;
+      const minWidth = Number.isFinite(options.minWidth)
+        ? options.minWidth
+        : 1100;
       const hosts = new Map();
       let frame = 0;
       let disposed = false;
@@ -6015,7 +6969,9 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
       const round = (n) => Math.round(n * 100) / 100;
       const number = (value) => Number.parseFloat(value) || 0;
       const equalSize = (a, b) =>
-        a && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
+        a &&
+        Math.abs(a.width - b.width) < 0.5 &&
+        Math.abs(a.height - b.height) < 0.5;
 
       // 设置本脚本负责的样式并保留原始值。
       function own(record, property, value) {
@@ -6024,7 +6980,12 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
         const priority = style.getPropertyPriority(property);
         let saved = record.styles.get(property);
         if (!saved) {
-          saved = { original: current, priority, written: null, writtenPriority: null };
+          saved = {
+            original: current,
+            priority,
+            written: null,
+            writtenPriority: null,
+          };
           record.styles.set(property, saved);
         } else if (
           saved.written !== null &&
@@ -6045,11 +7006,16 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
         for (const [property, saved] of record.styles) {
           if (
             record.node.style.getPropertyValue(property) !== saved.written ||
-            record.node.style.getPropertyPriority(property) !== saved.writtenPriority
+            record.node.style.getPropertyPriority(property) !==
+              saved.writtenPriority
           )
             continue;
           if (saved.original)
-            record.node.style.setProperty(property, saved.original, saved.priority);
+            record.node.style.setProperty(
+              property,
+              saved.original,
+              saved.priority,
+            );
           else record.node.style.removeProperty(property);
         }
         record.styles.clear();
@@ -6062,19 +7028,29 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
 
       // 遍历结果分组，返回实际参与布局的结果单元。
       function candidates(host) {
-        return [...host.children].filter(
-          (node) =>
-            node instanceof HTMLElement &&
-            !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(node.tagName),
-        );
+        return [...host.children]
+          .sort(
+            (a, b) =>
+              Number(b.classList.contains("qc-ai")) -
+              Number(a.classList.contains("qc-ai")),
+          )
+          .filter(
+            (node) =>
+              node instanceof HTMLElement &&
+              !["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(
+                node.tagName,
+              ),
+          );
       }
 
       // 筛选当前可见的结果，排除浮层及隐藏内容。
       function liveItems(host) {
         return candidates(host).filter((node) => {
-          if (node.hidden || node.classList.contains("qc-pass-through")) return false;
+          if (node.hidden || node.classList.contains("qc-pass-through"))
+            return false;
           const css = getComputedStyle(node);
-          if (css.display === "none" || css.display === "contents") return false;
+          if (css.display === "none" || css.display === "contents")
+            return false;
           // 原生浮层不属于搜索卡片，不参与位置调整。
           if (
             (css.position === "fixed" || css.position === "absolute") &&
@@ -6088,28 +7064,32 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
       // 判断模块是否需要跨越两列。
       function fullWidth(node) {
         return (
-          !node.classList.contains("qc-card") ||
-          node.classList.contains("qc-module") ||
-          !!node.querySelector(
-            '[aria-expanded],video,g-scrolling-carousel,[role="dialog"],[role="menu"]',
-          )
+          node.classList.contains("qc-ai") ||
+          !node.matches(".qc-card,.qc-module")
         );
       }
 
       // 记录当前可见内容位置，减小布局变化引起的跳动。
       function captureAnchor() {
+        if (scrollY < 4) return null;
         const focus = document.activeElement;
-        if (focus && focus !== document.body && focus !== document.documentElement) {
+        if (
+          focus &&
+          focus !== document.body &&
+          focus !== document.documentElement
+        ) {
           for (const host of hosts.keys()) {
             if (!host.contains(focus)) continue;
             const rect = focus.getBoundingClientRect();
-            if (rect.bottom > 0 && rect.top < innerHeight) return { node: focus, top: rect.top };
+            if (rect.bottom > 0 && rect.top < innerHeight)
+              return { node: focus, top: rect.top };
           }
         }
         const visible = [];
         for (const host of hosts.keys()) {
           for (const node of candidates(host)) {
-            if (node.classList.contains("qc-pass-through") || node.hidden) continue;
+            if (node.classList.contains("qc-pass-through") || node.hidden)
+              continue;
             const rect = node.getBoundingClientRect();
             if (rect.width > 0 && rect.bottom > 0 && rect.top < innerHeight)
               visible.push({ node, top: rect.top, bottom: rect.bottom });
@@ -6147,6 +7127,7 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
           host: record(host),
           items: new Map(),
           sizes: new WeakMap(),
+          columns: new WeakMap(),
           observer: null,
           mutation: null,
         };
@@ -6159,7 +7140,10 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
                 : entry.borderBoxSize;
               const size = box
                 ? { width: box.inlineSize, height: box.blockSize }
-                : { width: entry.contentRect.width, height: entry.contentRect.height };
+                : {
+                    width: entry.contentRect.width,
+                    height: entry.contentRect.height,
+                  };
               const old = state.sizes.get(entry.target);
               // 容器高度是布局结果，不重复触发布局。
               if (
@@ -6175,7 +7159,11 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
           state.observer.observe(host);
         }
         state.mutation = new MutationObserver(schedule);
-        state.mutation.observe(host, { childList: true, subtree: true, characterData: true });
+        state.mutation.observe(host, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
         hosts.set(host, state);
         return state;
       }
@@ -6200,7 +7188,9 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
           stop();
           return;
         }
-        const anchor = captureAnchor();
+        const anchor = [...hosts.values()].some((state) => state.items.size)
+          ? captureAnchor()
+          : null;
         const plans = [];
         // 先批量设置宽度，再测量高度并写入位置。
         for (const [host, state] of hosts) {
@@ -6214,7 +7204,8 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
             padRight = number(hostCSS.paddingRight);
           const padTop = number(hostCSS.paddingTop),
             padBottom = number(hostCSS.paddingBottom);
-          const borders = number(hostCSS.borderTopWidth) + number(hostCSS.borderBottomWidth);
+          const borders =
+            number(hostCSS.borderTopWidth) + number(hostCSS.borderBottomWidth);
           const width = host.clientWidth - padLeft - padRight;
           const columnWidth = (width - gap) / 2;
           if (!Number.isFinite(columnWidth) || columnWidth < 160) {
@@ -6275,17 +7266,27 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
           const heights = [plan.padTop, plan.padTop];
           let bottom = plan.padTop;
           for (const { item, span, height } of plan.items) {
-            const column = heights[0] <= heights[1] ? 0 : 1;
+            let column = plan.state.columns.get(item.node);
+            if (column === undefined) {
+              column = heights[0] <= heights[1] ? 0 : 1;
+              plan.state.columns.set(item.node, column);
+            }
             const top = span ? Math.max(...heights) : heights[column];
             const visualColumn = plan.rtl ? 1 - column : column;
-            const left = plan.padLeft + (span ? 0 : visualColumn * (plan.columnWidth + gap));
+            const left =
+              plan.padLeft +
+              (span ? 0 : visualColumn * (plan.columnWidth + gap));
             own(item, "left", `${round(left)}px`);
             own(item, "top", `${round(top)}px`);
             bottom = Math.max(bottom, top + height);
             if (span) heights[0] = heights[1] = top + height + gap;
             else heights[column] = top + height + gap;
           }
-          own(plan.state.host, "height", `${Math.ceil(bottom + plan.padBottom + plan.borders)}px`);
+          own(
+            plan.state.host,
+            "height",
+            `${Math.ceil(bottom + plan.padBottom + plan.borders)}px`,
+          );
         }
         settle(anchor);
       }
@@ -6298,7 +7299,9 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
         }
         const desired = new Set(
           [...document.querySelectorAll(".qc-results")].filter(
-            (host) => host instanceof HTMLElement && !host.closest(".qc-card,.qc-module"),
+            (host) =>
+              host instanceof HTMLElement &&
+              !host.closest(".qc-card,.qc-module"),
           ),
         );
         for (const [host, state] of hosts)
@@ -6320,7 +7323,8 @@ html[data-qc-active="true"] .header :is(.sbtn, .sec-btn) {
       }
       const onResize = () => sync();
       const onLoad = (event) => {
-        if ([...hosts.keys()].some((host) => host.contains(event.target))) schedule();
+        if ([...hosts.keys()].some((host) => host.contains(event.target)))
+          schedule();
       };
       addEventListener("resize", onResize, { passive: true });
       // 捕获延迟图片加载，兼容没有尺寸监听器的环境。
@@ -6599,7 +7603,11 @@ button:disabled {
         l.append(input, document.createTextNode(` ${label}`));
         segments.append(l);
       }
-      fieldset.append(legend, segments, make("span", "窄屏使用单列；复杂模块保留整行。", "hint"));
+      fieldset.append(
+        legend,
+        segments,
+        make("span", "窄屏自动使用单列；推荐与交互模块融入瀑布流。", "hint"),
+      );
 
       // 创建带有说明和完整点击区域的设置开关。
       function toggle(label, hint) {
@@ -6615,8 +7623,14 @@ button:disabled {
       }
       form.append(colorGroup, fieldset);
       const enabledToggle = toggle("启用样式优化", "关闭后恢复本站原生外观。");
-      const adsToggle = toggle("隐藏搜索广告", "仅隐藏有明确广告标记的搜索结果。");
-      const newTab = toggle("搜索外链新标签打开", "不改写原始地址，不影响分页和站内导航。");
+      const adsToggle = toggle(
+        "隐藏搜索广告",
+        "仅隐藏有明确广告标记的搜索结果。",
+      );
+      const newTab = toggle(
+        "搜索外链新标签打开",
+        "不改写原始地址，不影响分页和站内导航。",
+      );
       const auto = toggle("自动拼接", "仅加载可识别的普通网页文字，默认开启。");
       const motion = toggle("轻柔动效", "自动尊重系统“减少动态效果”设置。");
       const status = make("p", null, "status");
@@ -6709,9 +7723,14 @@ button:disabled {
         registerMenus();
         return persistent;
       }
-      const liveSettings = createLiveSettings(form, readDraft, saveDraft, (message) => {
-        status.textContent = message;
-      });
+      const liveSettings = createLiveSettings(
+        form,
+        readDraft,
+        saveDraft,
+        (message) => {
+          status.textContent = message;
+        },
+      );
       // 关闭前刷新当前有效输入，保留刚刚输入的主题颜色。
       function requestClose() {
         void liveSettings.flush().then(close);
@@ -6727,7 +7746,8 @@ button:disabled {
     // 每个站点只提供一个设置菜单，全部选项统一在弹窗内调整。
     function registerMenus() {
       if (typeof GM_registerMenuCommand !== "function") return;
-      if (menus.length && typeof GM_unregisterMenuCommand !== "function") return;
+      if (menus.length && typeof GM_unregisterMenuCommand !== "function")
+        return;
       if (typeof GM_unregisterMenuCommand === "function")
         for (const id of menus.splice(0)) GM_unregisterMenuCommand(id);
       menus.push(GM_registerMenuCommand("界面设置", openSettings));
@@ -6735,13 +7755,24 @@ button:disabled {
     const masonry = createMasonryLayout(() => active && config.columns === 2);
     const loader = createLoader();
     // 设置仅通过脚本管理器菜单打开，页面不添加悬浮入口。
-    const observer = new MutationObserver(schedule);
-    observer.observe(document.body, {
+    const observer = new MutationObserver((records) => {
+      ensureStyles();
+      if (
+        records.some(
+          (record) =>
+            record.type !== "attributes" ||
+            record.attributeName === "href" ||
+            !record.target.matches(".qc-card,.qc-module,.qc-results"),
+        )
+      )
+        schedule();
+    });
+    observer.observe(document.documentElement, {
       subtree: true,
       childList: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ["href"],
+      attributeFilter: ["href", "hidden", "aria-hidden", "style", "class"],
     });
     addEventListener("popstate", schedule);
     addEventListener("pageshow", schedule);
@@ -6750,9 +7781,20 @@ button:disabled {
     scan();
   })();
 }
-if (document.readyState === "loading")
-  document.addEventListener("DOMContentLoaded", 启动其他搜索站点, { once: true });
-else 启动其他搜索站点();
+// 站点脚本可能接管加载事件；在正文出现时初始化，不等待页面所有资源。
+(() => {
+  let started = false;
+  const observer = new MutationObserver(start);
+  // 正文可用后只启动一次，异步结果由适配器自身监听。
+  function start() {
+    if (started || !document.body) return;
+    started = true;
+    observer.disconnect();
+    启动其他搜索站点();
+  }
+  observer.observe(document, { childList: true, subtree: true });
+  start();
+})();
 
 // 普通结果卡片支持短按空白区域打开主链接，长按、拖动和文字选择不跳转。
 (() => {
@@ -6782,7 +7824,8 @@ else 启动其他搜索站点();
   // 拖动超过容差即视为选择或滚动，之后的合成click不能触发整卡跳转。
   function movePress(event) {
     if (!press || press.id !== event.pointerId) return;
-    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8) press.moved = true;
+    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8)
+      press.moved = true;
   }
 
   // 指针取消和上下文菜单均表示用户没有完成普通单击。
@@ -6811,10 +7854,14 @@ else 启动其他搜索站点();
     const heldOrDragged =
       event.type !== "keydown" &&
       press?.card === card &&
-      (press.canceled || press.moved || press.selected || performance.now() - press.time >= 500);
+      (press.canceled ||
+        press.moved ||
+        press.selected ||
+        performance.now() - press.time >= 500);
     if (selecting || heldOrDragged) {
       // 长按标题或链接也不能因随后产生的click误跳转，菜单按钮仍由原生处理。
-      if (control?.matches("a") && card.contains(control)) event.preventDefault();
+      if (control?.matches("a") && card.contains(control))
+        event.preventDefault();
       return;
     }
     if (control && card.contains(control)) return;
@@ -6823,16 +7870,26 @@ else 启动其他搜索站点();
     const link =
       title?.closest("a[href]") ||
       title?.querySelector("a[href]") ||
-      card.querySelector("a[href]:has(h3),a[href]:has(h2),h3 a[href],h2 a[href]");
+      card.querySelector(
+        "a[href]:has(h3),a[href]:has(h2),h3 a[href],h2 a[href]",
+      );
     if (!link || !/^https?:/.test(link.href)) return;
     event.preventDefault();
-    if (event.ctrlKey || event.metaKey || event.shiftKey || event.type === "auxclick")
+    if (
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.type === "auxclick"
+    )
       window.open(link.href, "_blank", "noopener");
     else link.click();
   }
   // 提前捕获空白点击，避免原生结果容器在冒泡阶段截断事件。
   document.addEventListener("pointerdown", beginPress, true);
-  document.addEventListener("pointermove", movePress, { capture: true, passive: true });
+  document.addEventListener("pointermove", movePress, {
+    capture: true,
+    passive: true,
+  });
   document.addEventListener("pointercancel", cancelPress, true);
   document.addEventListener("contextmenu", cancelPress, true);
   document.addEventListener("click", openCard, true);
@@ -6862,7 +7919,8 @@ else 启动其他搜索站点();
 (() => {
   const engines = [
     {
-      hosts: /^(?:www\.)?google\.(?:com|[a-z]{2,3}|co\.[a-z]{2}|com\.[a-z]{2})$/i,
+      hosts:
+        /^(?:www\.)?google\.(?:com|[a-z]{2,3}|co\.[a-z]{2}|com\.[a-z]{2})$/i,
       path: "/search",
       selectors: [
         "#tads",
@@ -6884,13 +7942,18 @@ else 启动其他搜索站点();
         "#content_right [data-tuiguang]",
         "#content_left .ec-tuiguang",
         "#content_left .ec_tuiguang_pp",
+        "#content_left span[class*=tuiguang]",
+        "#content_right span[class*=tuiguang]",
       ],
     },
     {
       hosts: /^(?:www|cn)\.bing\.com$/i,
       path: "/search",
       selectors: [
-        "#b_results .b_ad",
+        ".b_ad",
+        "#b_topw > li:has(.va_gc_slug_badge)",
+        "#b_topw > li:has(.b_ad_description)",
+        "#b_rrat_cont > li:has(.va_gc_slug_badge)",
         "#b_context .b_ad",
         "#b_results .ad_fls",
         "#b_results [data-text-ad]",
@@ -6900,6 +7963,7 @@ else 启动其他搜索站点();
       hosts: /^www\.sogou\.com$/i,
       path: "/web",
       selectors: [
+        ".sponsored-ams",
         ".results [data-tuiguang]",
         ".results [data-text-ad]",
         ".results .vrwrap.advr",
@@ -6910,10 +7974,12 @@ else 启动其他搜索站点();
     },
   ];
   const engine = engines.find(
-    (rule) => rule.hosts.test(location.hostname) && rule.path === location.pathname,
+    (rule) =>
+      rule.hosts.test(location.hostname) && rule.path === location.pathname,
   );
   if (!engine || window.top !== window.self) return;
   let timer = 0;
+  let adStyle = null;
   const marked = new Set();
   const scopeSelector =
     "#rso,#tads,#tadsb,#bottomads,#content_left,#content_right,#b_results,#b_context,.results";
@@ -6930,6 +7996,21 @@ else 启动其他搜索站点();
       return container;
     return marker;
   }
+  // 对照参考脚本和实页验明的图片徽标指纹，区分“广告”与“网页”标签。
+  function hasBingImageAd(node) {
+    const known = new Set([0x5e313062, 0x92eeae4f]);
+    for (const paragraph of node.querySelectorAll("p")) {
+      const content = getComputedStyle(paragraph, "::before").content;
+      const badge = content.match(/data:image\/[^"')]+/);
+      if (!badge) continue;
+      let hash = 2166136261;
+      for (const character of badge[0])
+        hash = Math.imul(hash ^ character.charCodeAt(0), 16777619) >>> 0;
+      if (known.has(hash)) return true;
+    }
+    return false;
+  }
+
   // 复查明确广告标记，普通正文中包含“广告”一词不会触发过滤。
   function scanAds() {
     timer = 0;
@@ -6945,6 +8026,21 @@ else 启动其他搜索站点();
         current.add(adContainer(marker));
       }
     }
+    if (engine.path === "/search" && /bing\.com$/i.test(location.hostname)) {
+      for (const node of document.querySelectorAll(
+        "#b_results li.b_algo,#b_topw li.b_algo",
+      )) {
+        if (hasBingImageAd(node)) current.add(node);
+      }
+    }
+    if (engine.path === "/s") {
+      for (const marker of document.querySelectorAll(
+        "#content_left a,#content_left span[class*=brand],#content_right a",
+      )) {
+        if (marker.textContent.trim() === "广告" && !marker.closest("h2,h3,p,.c-abstract"))
+          current.add(adContainer(marker));
+      }
+    }
     let changed = false;
     for (const node of marked) {
       if (!node.isConnected || !current.has(node)) {
@@ -6955,7 +8051,9 @@ else 启动其他搜索站点();
     }
     for (const node of current) {
       if (
-        node.matches("#rso,#content_left,#content_right,#b_results,#b_context,.results,body,html")
+        node.matches(
+          "#rso,#content_left,#content_right,#b_results,#b_context,.results,body,html",
+        )
       )
         continue;
       if (!node.classList.contains("qc-ad-hidden")) {
@@ -6968,13 +8066,17 @@ else 启动其他搜索站点();
   }
   // 合并异步插入广告的连续变化，避免反复遍历整页。
   function scheduleAds() {
+    if (adStyle && !adStyle.isConnected)
+      (document.head || document.documentElement).append(adStyle);
     if (!timer) timer = setTimeout(scanAds, 120);
   }
   // 样式只在广告过滤开启时生效，关闭选项即可还原原生内容。
   function startAds() {
     const style = document.createElement("style");
+    adStyle = style;
     style.textContent = `
-      html[data-qc-ads="true"] .qc-ad-hidden {
+      html[data-qc-ads="true"] .qc-ad-hidden,
+      html[data-qc-ads="true"] :is(#b_topw,#b_results,#b_context,#b_rrat_cont) .qc-ad-hidden {
         display:none!important;
       }
     `;
