@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.20
+// @version      1.9.21
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -684,7 +684,7 @@ dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both;
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.20";
+  const VERSION = "1.9.21";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -7477,6 +7477,20 @@ html[data-qc-active="true"]
 
     // 保留原生节点的双列布局实现。
 
+    // 只固定普通卡片列位；加载中的跨行占位不能提前占用左列。
+    function masonryColumn(node, span, heights, columns) {
+      if (span) {
+        columns.delete(node);
+        return 0;
+      }
+      let column = columns.get(node);
+      if (column === undefined) {
+        column = heights[0] <= heights[1] ? 0 : 1;
+        columns.set(node, column);
+      }
+      return column;
+    }
+
     // 管理双列布局和原生样式恢复，不移动结果节点。
     function createMasonryLayout(canRun, options = {}) {
       const gap = Number.isFinite(options.gap) ? Math.max(0, options.gap) : 20;
@@ -7787,11 +7801,9 @@ html[data-qc-active="true"]
           const heights = [plan.padTop, plan.padTop];
           let bottom = plan.padTop;
           for (const { item, span, height } of plan.items) {
-            let column = plan.state.columns.get(item.node);
-            if (column === undefined) {
-              column = heights[0] <= heights[1] ? 0 : 1;
-              plan.state.columns.set(item.node, column);
-            }
+            const column = masonryColumn(
+              item.node, span, heights, plan.state.columns,
+            );
             const top = span ? Math.max(...heights) : heights[column];
             const visualColumn = plan.rtl ? 1 - column : column;
             const left =
