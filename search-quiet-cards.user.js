@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.11
+// @version      1.9.12
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @match        https://www.google.com/search*
@@ -151,7 +151,7 @@ dialog { overflow: hidden !important; padding: 8px !important; }
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.11";
+  const VERSION = "1.9.12";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -4361,7 +4361,7 @@ input[type="color"]:disabled,
     if (typeof GM_unregisterMenuCommand === "function")
       while (menus.length) GM_unregisterMenuCommand(menus.pop());
     else if (menus.length) return;
-    menus.push(GM_registerMenuCommand("界面设置…", openSettings));
+    menus.push(GM_registerMenuCommand("界面设置", openSettings));
   }
 
   // 初始化页面功能、监听器和设置入口。
@@ -6715,7 +6715,7 @@ button:disabled {
       if (menus.length && typeof GM_unregisterMenuCommand !== "function") return;
       if (typeof GM_unregisterMenuCommand === "function")
         for (const id of menus.splice(0)) GM_unregisterMenuCommand(id);
-      menus.push(GM_registerMenuCommand("界面设置…", openSettings));
+      menus.push(GM_registerMenuCommand("界面设置", openSettings));
     }
     const masonry = createMasonryLayout(() => active && config.columns === 2);
     const loader = createLoader();
