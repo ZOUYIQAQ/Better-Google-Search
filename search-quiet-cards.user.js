@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.8
+// @version      1.9.9
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @match        https://www.google.com/search*
@@ -151,7 +151,7 @@ dialog { overflow: hidden !important; padding: 8px !important; }
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.8";
+  const VERSION = "1.9.9";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -1297,6 +1297,96 @@ html[data-gqc-active="true"] .gqc-ai-pending::before {
   right: 24px;
   font-size: 12px;
   color: var(--gqc-muted);
+}
+/* AI追问区沿用卡片主题与正文宽度，保留原生输入、附件和语音交互。 */
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) :is(.jkIdtf,.wPoHPd,.Pqkn2e,.F6k9bd,.X6JNf):has(textarea.ITIRGe) {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  margin-inline: 0 !important;
+  padding-inline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .wPoHPd:has(textarea.ITIRGe) {
+  position: relative !important;
+  bottom: auto !important;
+  z-index: auto !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .wPoHPd:has(textarea.ITIRGe)::before,
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .wPoHPd:has(textarea.ITIRGe)::after {
+  background: none !important;
+  box-shadow: none !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) {
+  width: 100% !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+  margin: 16px 0 8px !important;
+  padding: 0 !important;
+  background: var(--gqc-bg) !important;
+  border: 1px solid var(--gqc-border) !important;
+  border-radius: 24px !important;
+  box-shadow: none !important;
+  color: var(--gqc-ink) !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe):focus-within {
+  border-color: var(--gqc-link) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gqc-link) 14%, transparent) !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) :is(.AgWCw,.esoFne,.yaj8zd,.Txyg0d) {
+  --xhUGwc: var(--gqc-bg) !important;
+  --XKMDxc: var(--gqc-surface) !important;
+  --jINu6c: var(--gqc-ink) !important;
+  --uLz37c: var(--gqc-muted) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) :is(.Zze5V,.d4HWzd,.wYOqBc) {
+  display: none !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) .AgWCw {
+  margin-bottom: 0 !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) textarea.ITIRGe {
+  box-sizing: border-box !important;
+  background: transparent !important;
+  color: var(--gqc-ink) !important;
+  caret-color: var(--gqc-link) !important;
+  font: 16px/1.5 Arial, sans-serif !important;
+  border: 0 !important;
+  outline: none !important;
+  resize: none !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) textarea.ITIRGe::placeholder {
+  color: var(--gqc-muted) !important;
+  opacity: 1;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) button {
+  background: var(--gqc-surface) !important;
+  color: var(--gqc-link) !important;
+  border-radius: 50% !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) button:hover {
+  background: color-mix(in srgb, var(--gqc-link) 12%, var(--gqc-surface)) !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) button:focus-visible {
+  outline: 2px solid var(--gqc-link) !important;
+  outline-offset: 3px;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) button:disabled {
+  opacity: 0.45;
+}
+
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) button svg {
+  color: inherit !important;
+  fill: currentColor !important;
+}
+html[data-gqc-active="true"] :is(.gqc-top,.gqc-ai-overview) .UAbVe:has(textarea.ITIRGe) button[data-xid="input-plate-send-button"]:not(:disabled) {
+  background: var(--gqc-link) !important;
+  color: var(--gqc-bg) !important;
 }
 /* 尚无正文的真实生成阶段使用轻量骨架，让固定预览框有清楚的加载含义。 */
 html[data-gqc-active="true"] .gqc-ai-pending:not(.gqc-ai-managed)::before {
