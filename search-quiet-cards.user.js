@@ -2,9 +2,11 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.12
+// @version      1.9.13
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
+// @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
+// @updateURL    https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
 // @match        https://www.google.com/search*
 // @include      /^https:\/\/(?:www\.)?google\.(?:com|[a-z]{2,3}|co\.[a-z]{2}|com\.[a-z]{2})\/search(?:\?.*)?$/
 // @run-at       document-start
@@ -151,7 +153,7 @@ dialog { overflow: hidden !important; padding: 8px !important; }
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.12";
+  const VERSION = "1.9.13";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
