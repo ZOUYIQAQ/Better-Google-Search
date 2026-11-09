@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.13
+// @version      1.9.14
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -153,7 +153,7 @@ dialog { overflow: hidden !important; padding: 8px !important; }
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.13";
+  const VERSION = "1.9.14";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -573,6 +573,13 @@ html[data-gqc-active="true"] .gqc-nav-shell {
   border: 0 !important;
   border-bottom: 1px solid var(--gqc-line) !important;
   padding-bottom: 0 !important;
+}
+/* 新导航已绘制底线，旧工具容器保留交互但不再叠加第二条分隔线。 */
+html[data-gqc-active="true"] #hdtb.gqc-nav-aux {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  margin-block: 0 !important;
 }
 html[data-gqc-active="true"] .gqc-nav-wrapper {
   box-sizing: border-box !important;
@@ -1976,6 +1983,11 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
     const oldNav = document.querySelector("#hdtb");
     const row = document.querySelector("#cnt .rQTE8b");
     if (row && row.querySelector('[role="list"]')) {
+      // 流式加载可能先识别旧工具容器，主导航出现后撤销其外壳边线。
+      if (oldNav) {
+        unmark(oldNav, "gqc-nav-shell");
+        mark(oldNav, "gqc-nav-aux");
+      }
       const shell = row.closest(".Fgyi2e") || row.closest(".YNk70c");
       if (shell) {
         mark(shell, "gqc-nav-shell");
@@ -1991,6 +2003,7 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
           mark(node, "gqc-nav-wrapper");
       }
     } else if (oldNav) {
+      unmark(oldNav, "gqc-nav-aux");
       mark(oldNav, "gqc-nav-shell");
       const items = oldNav.querySelector('#hdtb-msb, [role="tablist"], nav');
       if (items) {
