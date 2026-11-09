@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.10
+// @version      1.9.11
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @match        https://www.google.com/search*
@@ -151,7 +151,7 @@ dialog { overflow: hidden !important; padding: 8px !important; }
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.10";
+  const VERSION = "1.9.11";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -2687,6 +2687,7 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
     let frame = 0;
     let pendingAnchor = null;
     let readingAnchor = null;
+    let expansionAnchor = null;
     let disposed = false;
     const enabled = () => !disposed && canRun();
     const round = (n) => Math.round(n * 100) / 100;
@@ -2806,13 +2807,16 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
 
     // 记录当前可见内容位置，减小布局变化引起的跳动。
     function captureAnchor() {
+      if (expansionAnchor?.node.isConnected) return expansionAnchor;
       const focus = document.activeElement;
       if (focus && focus !== document.body && focus !== document.documentElement) {
         for (const host of hosts.keys()) {
           if (!host.contains(focus)) continue;
-          const rect = focus.getBoundingClientRect();
-          if (focus.closest(".gqc-masonry-item") && rect.bottom > 0 && rect.top < innerHeight)
-            return { node: focus, top: rect.top, scroll: scrollY };
+          const item = focus.closest(".gqc-masonry-item");
+          if (!item) continue;
+          const rect = item.getBoundingClientRect();
+          if (rect.bottom > 0 && rect.top < innerHeight)
+            return { node: item, top: rect.top, scroll: scrollY };
         }
       }
       const visible = [];
@@ -3085,19 +3089,53 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
       }
       pendingAnchor = null;
       readingAnchor = null;
+      expansionAnchor = null;
       if (!hosts.size) return;
       const anchor = captureAnchor();
       for (const [host, state] of [...hosts]) drop(host, state);
       settle(anchor);
     }
+    // 展开操作固定卡片起点，不能把向下移动的按钮或后续结果当作阅读锚点。
+    function onExpansionClick(event) {
+      if (!enabled() || !(event.target instanceof Element)) return;
+      const control = event.target.closest("button,[role=button],[aria-expanded]");
+      const item = control?.closest(".gqc-masonry-item,.gqc-top,.gqc-ai-overview");
+      if (
+        !item ||
+        (!item.matches(".gqc-top,.gqc-ai-overview") &&
+          ![...hosts.keys()].some((host) => host.contains(item)))
+      )
+        return;
+      const label = `${control.getAttribute("aria-label") || ""} ${control.textContent || ""}`;
+      if (
+        !control.hasAttribute("aria-expanded") &&
+        !/展开|收起|更多|全部显示|show more|show less|expand|collapse/i.test(label)
+      )
+        return;
+      const rect = item.getBoundingClientRect();
+      expansionAnchor = { node: item, top: rect.top, scroll: scrollY };
+      pendingAnchor = expansionAnchor;
+      readingAnchor = expansionAnchor;
+    }
+
+    // 用户开始主动滚动后结束展开锚定，恢复普通阅读位置跟随。
+    function releaseExpansionAnchor() {
+      expansionAnchor = null;
+      readingAnchor = null;
+    }
+
     // 用户滚动后更新阅读对象；重排已排队时保留变动前的锚点。
     function onReaderScroll() {
+      if (expansionAnchor && Math.abs(scrollY - expansionAnchor.scroll) > 1) expansionAnchor = null;
       if (!frame && !pendingAnchor && enabled()) readingAnchor = captureAnchor();
     }
     const onResize = () => sync();
     const onLoad = (event) => {
       if ([...hosts.keys()].some((host) => host.contains(event.target))) schedule();
     };
+    document.addEventListener("click", onExpansionClick, true);
+    addEventListener("wheel", releaseExpansionAnchor, { passive: true });
+    addEventListener("touchmove", releaseExpansionAnchor, { passive: true });
     addEventListener("scroll", onReaderScroll, { passive: true });
     addEventListener("resize", onResize, { passive: true });
     document.addEventListener("load", onLoad, true);
@@ -3111,6 +3149,9 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
       destroy() {
         stop();
         disposed = true;
+        document.removeEventListener("click", onExpansionClick, true);
+        removeEventListener("wheel", releaseExpansionAnchor);
+        removeEventListener("touchmove", releaseExpansionAnchor);
         removeEventListener("scroll", onReaderScroll);
         removeEventListener("resize", onResize);
         document.removeEventListener("load", onLoad, true);
