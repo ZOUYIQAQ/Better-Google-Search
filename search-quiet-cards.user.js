@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Search · Quiet Cards
-// @name:zh-CN   搜索 · 静谧卡片（Google / 百度 / 必应 / 搜狗）
+// @name         谷歌搜索样式优化 · MD3 风格
+// @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
 // @version      1.9.8
-// @description  以 Google 为主，兼容百度、必应、搜狗；从脚本管理器菜单打开设置。
+// @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @match        https://www.google.com/search*
 // @include      /^https:\/\/(?:www\.)?google\.(?:com|[a-z]{2,3}|co\.[a-z]{2}|com\.[a-z]{2})\/search(?:\?.*)?$/
@@ -3132,7 +3132,7 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
   function syncSidePanel(scope) {
     const node = document.querySelector("#rhs");
     if (!node || scope.contains(node) || !node.textContent.trim()) return;
-    const placeholder = document.createComment("静谧卡片：知识面板原始位置");
+    const placeholder = document.createComment("搜索样式优化：知识面板原始位置");
     node.before(placeholder);
     sidePlacement = { node, placeholder };
     scope.append(node);
@@ -3155,7 +3155,7 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
       if (scope.contains(node) || node.closest('[role="dialog"]')) continue;
       const heading = node.querySelector('h2,[role="heading"]');
       if (!heading || !/^(图片|图像|Images)$/i.test(heading.textContent.trim())) continue;
-      const placeholder = document.createComment("静谧卡片：图片模块原始位置");
+      const placeholder = document.createComment("搜索样式优化：图片模块原始位置");
       node.before(placeholder);
       imagePlacements.set(node, placeholder);
       scope.append(node);
@@ -3177,7 +3177,7 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
     const node = document.querySelector("#bres");
     if (!node || scope.contains(node)) return;
     if (relatedPlacement) restoreRelatedSearches();
-    const placeholder = document.createComment("静谧卡片：推荐搜索原始位置");
+    const placeholder = document.createComment("搜索样式优化：推荐搜索原始位置");
     node.before(placeholder);
     relatedPlacement = { node, placeholder };
     scope.append(node);
@@ -4084,7 +4084,7 @@ input[type="color"]:disabled,
       row.append(make("span", { class: "switch-label" }, title), control);
       return { row, input };
     }
-    const enabledOption = settingSwitch("theme-enabled", "启用静谧卡片");
+    const enabledOption = settingSwitch("theme-enabled", "启用样式优化");
     const motionOption = settingSwitch("theme-motion", "轻柔动效");
     const adsOption = settingSwitch("block-ads", "隐藏搜索广告");
     const widthField = make("label", { class: "switch-row settings-option", for: "theme-width" });
@@ -4317,7 +4317,7 @@ input[type="color"]:disabled,
           if (typeof GM_unregisterMenuCommand === "function") GM_unregisterMenuCommand(id);
         } catch {}
       }
-      console.error("[静谧卡片] 初始化失败，已恢复原生页面。", error);
+      console.error("[搜索样式优化] 初始化失败，已恢复原生页面。", error);
     }
   }
 
@@ -6443,7 +6443,7 @@ button:disabled {
         return input;
       }
       form.append(colorGroup, fieldset);
-      const enabledToggle = toggle("启用静谧卡片", "关闭后恢复本站原生外观。");
+      const enabledToggle = toggle("启用样式优化", "关闭后恢复本站原生外观。");
       const adsToggle = toggle("隐藏搜索广告", "仅隐藏有明确广告标记的搜索结果。");
       const newTab = toggle("搜索外链新标签打开", "不改写原始地址，不影响分页和站内导航。");
       const auto = toggle("自动拼接", "仅加载可识别的普通网页文字，默认开启。");
