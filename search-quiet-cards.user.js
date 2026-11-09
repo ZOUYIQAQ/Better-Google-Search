@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.17
+// @version      1.9.18
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -13,6 +13,7 @@
 // @inject-into  content
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_addValueChangeListener
 // @grant        GM_registerMenuCommand
 // @grant        GM_unregisterMenuCommand
 // @noframes
@@ -23,6 +24,251 @@
 // @match        https://cn.bing.com/search*
 // @match        https://www.sogou.com/web*
 // ==/UserScript==
+
+// 平台开关位于全部页面功能之前；关闭的平台只注册管理器设置菜单。
+(() => {
+  const PLATFORM_KEY = "quiet-search.platforms.v1";
+  const PLATFORM_NAMES = {
+    google: "Google",
+    baidu: "百度",
+    bing: "必应",
+    sogou: "搜狗",
+  };
+  const host = location.hostname;
+  const currentPlatform =
+    /^(?:www\.)?google\.(?:com|[a-z]{2,3}|co\.[a-z]{2}|com\.[a-z]{2})$/i.test(
+      host,
+    )
+      ? "google"
+      : /^(?:www|www1)\.baidu\.com$/i.test(host)
+        ? "baidu"
+        : /^(?:www|cn)\.bing\.com$/i.test(host)
+          ? "bing"
+          : host === "www.sogou.com"
+            ? "sogou"
+            : null;
+  if (!currentPlatform || window.top !== window.self) return;
+
+  // 平台开关独立于外观设置，各站共享同一份启用列表。
+  function readPlatforms() {
+    let stored = {};
+    try {
+      if (typeof GM_getValue === "function")
+        stored = GM_getValue(PLATFORM_KEY, {}) || {};
+    } catch {}
+    return Object.fromEntries(
+      Object.keys(PLATFORM_NAMES).map((name) => [name, stored[name] !== false]),
+    );
+  }
+
+  // 在原有设置面板内提供四站注入开关，修改后立即保存。
+  function addPlatformSettings(form, before = form.firstChild) {
+    const field = document.createElement("fieldset");
+    field.className = "platform-settings";
+    const style = document.createElement("style");
+    style.textContent = `
+.platform-settings {
+  border: 0;
+  margin: 0 0 24px;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--s-container, #f9ebe9);
+}
+.platform-settings legend {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0;
+}
+.platform-settings p {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 4px 0 12px;
+  color: inherit;
+  opacity: 0.8;
+}
+.platform-settings label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 42px;
+  cursor: pointer;
+}
+.platform-settings input {
+  appearance: none !important;
+  position: relative !important;
+  width: 44px !important;
+  height: 26px !important;
+  min-width: 44px;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: #bfa39c !important;
+  cursor: pointer;
+}
+.platform-settings input:checked {
+  background: #765047 !important;
+}
+.platform-settings input::before {
+  content: none !important;
+}
+.platform-settings input::after {
+  content: "" !important;
+  display: block;
+  position: absolute;
+  left: 3px !important;
+  top: 3px !important;
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 50%;
+  background: white;
+  transform: none !important;
+  transition: transform 160ms ease;
+}
+.platform-settings input:checked::after {
+  transform: translateX(18px) !important;
+}
+.platform-settings input:focus-visible {
+  outline: 2px solid #765047;
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .platform-settings input::after {
+    transition: none;
+  }
+}
+.platform-settings [role="alert"] {
+  color: #a63832;
+}
+@media (prefers-color-scheme: dark) {
+  .platform-settings {
+    background: #352925;
+  }
+}
+`;
+    const legend = document.createElement("legend");
+    legend.textContent = "平台注入";
+    const hint = document.createElement("p");
+    hint.textContent =
+      "关闭的平台不再修改页面。修改本站开关后会自动刷新，以完整恢复或重新启用。";
+    const error = document.createElement("p");
+    error.setAttribute("role", "alert");
+    error.hidden = true;
+    field.append(style, legend, hint);
+    const values = readPlatforms();
+    for (const [name, label] of Object.entries(PLATFORM_NAMES)) {
+      const row = document.createElement("label");
+      const text = document.createElement("span");
+      text.textContent = label;
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = `platform-${name}`;
+      input.setAttribute("role", "switch");
+      input.checked = values[name];
+      // 先完成持久化，再刷新本站；其他平台的设置不打断当前页面。
+      input.addEventListener("change", async () => {
+        const next = { ...readPlatforms(), [name]: input.checked };
+        input.disabled = true;
+        try {
+          if (typeof GM_setValue !== "function")
+            throw new Error("当前管理器不支持保存平台设置");
+          await GM_setValue(PLATFORM_KEY, next);
+          if (name === currentPlatform) location.reload();
+        } catch {
+          input.checked = !next[name];
+          error.textContent = "平台开关保存失败，请重试。";
+          error.hidden = false;
+        } finally {
+          input.disabled = false;
+        }
+      });
+      row.append(text, input);
+      field.append(row);
+    }
+    field.append(error);
+    form.insertBefore(field, before);
+  }
+
+  let platformPanel = null;
+  // 其他标签页修改本站开关时也刷新还原，避免已打开的页面继续保留旧效果。
+  if (typeof GM_addValueChangeListener === "function") {
+    GM_addValueChangeListener(PLATFORM_KEY, (_name, previous, next, remote) => {
+      if (
+        remote &&
+        (previous?.[currentPlatform] !== false) !==
+          (next?.[currentPlatform] !== false)
+      )
+        location.reload();
+    });
+  }
+  // 关闭注入时仍可按需打开管理器设置，未打开前不创建任何页面节点。
+  function openPlatformSettings() {
+    if (platformPanel?.isConnected) return;
+    const host = document.createElement("div");
+    const shadow = host.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent = `
+dialog {
+  box-sizing: border-box;
+  width: min(520px, calc(100vw - 32px));
+  border: 0;
+  border-radius: 28px;
+  background: #fffbfa;
+  color: #352c29;
+  font: 14px/1.6 system-ui;
+}
+dialog::backdrop {
+  background: rgb(35 27 24 / 0.38);
+}
+h2 {
+  margin: 0;
+  font-size: 24px;
+}
+p {
+  color: #746660;
+}
+@media (prefers-color-scheme: dark) {
+  dialog {
+    background: #211a18;
+    color: #ede0dc;
+  }
+  p {
+    color: #cbbab4;
+  }
+}
+`;
+    const dialog = document.createElement("dialog");
+    dialog.setAttribute("aria-label", "平台注入设置");
+    const heading = document.createElement("h2");
+    heading.textContent = "平台注入设置";
+    const intro = document.createElement("p");
+    intro.textContent = `${PLATFORM_NAMES[currentPlatform]} 已关闭注入，当前页面保持原生状态。`;
+    const form = document.createElement("form");
+    addPlatformSettings(form);
+    dialog.append(heading, intro, form);
+    shadow.append(style, dialog);
+    // 退出设置时只清理按需创建的面板，不触碰原生网页。
+    function close() {
+      host.remove();
+      platformPanel = null;
+    }
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      close();
+    });
+    mountSettingsFrame(dialog, shadow, close);
+    (document.body || document.documentElement).append(host);
+    platformPanel = host;
+    dialog.showModal();
+  }
+
+  if (!readPlatforms()[currentPlatform]) {
+    if (typeof GM_registerMenuCommand === "function")
+      GM_registerMenuCommand("界面设置", openPlatformSettings);
+    return;
+  }
+
 
 // 为设置表单串行保存最新值，连续输入颜色时合并短时间内的变更。
 function createLiveSettings(form, readDraft, saveDraft, showStatus) {
@@ -172,7 +418,7 @@ dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both;
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.17";
+  const VERSION = "1.9.18";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -4289,6 +4535,7 @@ input[type="color"]:disabled,
     const cancel = make("button", { type: "button" }, "关闭");
     actions.append(reset, spacer, cancel);
     form.append(heading, intro, colorField, layoutField, loadField, behavior, status, actions);
+    addPlatformSettings(form, colorField);
     dialog.append(form);
     shadow.append(sheet, dialog);
     host.dataset.dark = String(root.dataset.gqcTheme === "dark");
@@ -7642,6 +7889,7 @@ button:disabled {
       reset.type = cancel.type = "button";
       actions.append(reset, cancel);
       form.append(status, actions);
+      addPlatformSettings(form);
       dialog.append(title, intro, form);
       shadow.append(ui, dialog);
       document.body.append(host);
@@ -8097,4 +8345,6 @@ button:disabled {
   }
   if (document.documentElement) startAds();
   else document.addEventListener("DOMContentLoaded", startAds, { once: true });
+})();
+
 })();
