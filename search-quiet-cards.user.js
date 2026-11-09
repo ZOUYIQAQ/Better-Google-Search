@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.19
+// @version      1.9.20
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -16,6 +16,10 @@
 // @grant        GM_addValueChangeListener
 // @grant        GM_registerMenuCommand
 // @grant        GM_unregisterMenuCommand
+// @include      /^https:\/\/(?:www\.)?google\.(?:com|[a-z]{2,3}|co\.[a-z]{2}|com\.[a-z]{2})\/(?:\?.*)?$/
+// @include      /^https:\/\/(?:www\.|www1\.)?baidu\.com\/(?:\?.*)?$/
+// @include      /^https:\/\/(?:www\.|cn\.)?bing\.com\/(?:\?.*)?$/
+// @include      /^https:\/\/(?:www\.)?sogou\.com\/(?:\?.*)?$/
 // @noframes
 // @license      MIT
 // @match        https://www.baidu.com/s*
@@ -40,9 +44,9 @@
       host,
     )
       ? "google"
-      : /^(?:www|www1)\.baidu\.com$/i.test(host)
+      : /^(?:www\.|www1\.)?baidu\.com$/i.test(host)
         ? "baidu"
-        : /^(?:www|cn)\.bing\.com$/i.test(host)
+        : /^(?:www\.|cn\.)?bing\.com$/i.test(host)
           ? "bing"
           : host === "www.sogou.com"
             ? "sogou"
@@ -243,7 +247,9 @@ p {
     const heading = document.createElement("h2");
     heading.textContent = "平台注入设置";
     const intro = document.createElement("p");
-    intro.textContent = `${PLATFORM_NAMES[currentPlatform]} 已关闭注入，当前页面保持原生状态。`;
+    intro.textContent = readPlatforms()[currentPlatform]
+      ? "首页保持原生样式，进入搜索结果后自动启用。"
+      : `${PLATFORM_NAMES[currentPlatform]} 已关闭注入，当前页面保持原生状态。`;
     const form = document.createElement("form");
     addPlatformSettings(form);
     dialog.append(heading, intro, form);
@@ -620,6 +626,52 @@ dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both;
   shadow.append(css);
 }
 
+  // 判断当前地址是否已经进入受支持的搜索结果路由。
+  function isSearchEntry() {
+    const paths = { google: "/search", baidu: "/s", bing: "/search", sogou: "/web" };
+    return location.pathname === paths[currentPlatform];
+  }
+
+  // 首页只监听路由，不修改网页；同文档进入搜索页后仅启动一次。
+  function watchSearchEntry(activate) {
+    let started = false;
+    let observer = null;
+    let timer = 0;
+    let menu = null;
+    // 在原生页面完成路由切换时启动，随后撤销等待器和临时菜单。
+    function attempt() {
+      if (started || !isSearchEntry()) return;
+      started = true;
+      observer?.disconnect();
+      if (timer) clearInterval(timer);
+      window.removeEventListener("popstate", attempt);
+      window.removeEventListener("hashchange", attempt);
+      document.removeEventListener("DOMContentLoaded", attempt);
+      if (menu !== null && typeof GM_unregisterMenuCommand === "function") {
+        GM_unregisterMenuCommand(menu);
+      }
+      if (platformPanel) {
+        platformPanel.remove();
+        platformPanel = null;
+      }
+      activate();
+    }
+    attempt();
+    if (started) return;
+    if (typeof GM_registerMenuCommand === "function") {
+      menu = GM_registerMenuCommand("界面设置", openPlatformSettings);
+    }
+    observer = new MutationObserver(attempt);
+    observer.observe(document, { childList: true, subtree: true });
+    window.addEventListener("popstate", attempt);
+    window.addEventListener("hashchange", attempt);
+    document.addEventListener("DOMContentLoaded", attempt);
+    // 页面可能只改地址而暂时没有DOM变化，低频兜底避免漏掉此时机。
+    timer = setInterval(attempt, 500);
+  }
+
+  // 搜索适配器延迟到结果路由运行，避免在首页提前退出后失去启动机会。
+  function activateSearchPage() {
 // Google 主适配逻辑，保留文档开始阶段初始化和站点原生交互。
 (() => {
   "use strict";
@@ -632,7 +684,7 @@ dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both;
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.19";
+  const VERSION = "1.9.20";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -8405,7 +8457,7 @@ button:disabled {
       ],
     },
     {
-      hosts: /^(?:www|www1)\.baidu\.com$/i,
+      hosts: /^(?:www\.|www1\.)?baidu\.com$/i,
       path: "/s",
       selectors: [
         "#content_left .EC_result",
@@ -8418,7 +8470,7 @@ button:disabled {
       ],
     },
     {
-      hosts: /^(?:www|cn)\.bing\.com$/i,
+      hosts: /^(?:www\.|cn\.)?bing\.com$/i,
       path: "/search",
       selectors: [
         ".b_ad",
@@ -8452,6 +8504,26 @@ button:disabled {
   let timer = 0;
   let adStyle = null;
   const marked = new Set();
+  const inlineAds = new Map();
+  // 仅覆盖广告原生的行内强制显示，并保留原值用于关闭过滤时恢复。
+  function hideInlineAd(node) {
+    const value = node.style.getPropertyValue("display");
+    const priority = node.style.getPropertyPriority("display");
+    if (priority !== "important" || value === "none") return false;
+    inlineAds.set(node, { value, priority });
+    node.style.setProperty("display", "none", "important");
+    return true;
+  }
+  // 只撤销脚本仍持有的隐藏值，不覆盖网页后续独立修改的样式。
+  function restoreInlineAd(node) {
+    const previous = inlineAds.get(node);
+    if (!previous) return;
+    if (node.style.getPropertyValue("display") === "none" &&
+        node.style.getPropertyPriority("display") === "important") {
+      node.style.setProperty("display", previous.value, previous.priority);
+    }
+    inlineAds.delete(node);
+  }
   const scopeSelector =
     "#rso,#tads,#tadsb,#bottomads,#content_left,#content_right,#b_results,#b_context,.results";
   const resultSelector =
@@ -8485,7 +8557,10 @@ button:disabled {
   // 复查明确广告标记，普通正文中包含“广告”一词不会触发过滤。
   function scanAds() {
     timer = 0;
-    if (document.documentElement.dataset.qcAds !== "true") return;
+    if (document.documentElement.dataset.qcAds !== "true") {
+      for (const node of inlineAds.keys()) restoreInlineAd(node);
+      return;
+    }
     const current = new Set();
     for (const selector of engine.selectors) {
       for (const marker of document.querySelectorAll(selector)) {
@@ -8516,6 +8591,7 @@ button:disabled {
     for (const node of marked) {
       if (!node.isConnected || !current.has(node)) {
         node.classList.remove("qc-ad-hidden");
+        restoreInlineAd(node);
         marked.delete(node);
         changed = true;
       }
@@ -8532,6 +8608,7 @@ button:disabled {
         changed = true;
       }
       marked.add(node);
+      changed = hideInlineAd(node) || changed;
     }
     if (changed) dispatchEvent(new Event("resize"));
   }
@@ -8552,12 +8629,16 @@ button:disabled {
       }
     `;
     (document.head || document.documentElement).append(style);
-    const observer = new MutationObserver(scheduleAds);
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => record.attributeName !== "style" || marked.has(record.target))) {
+        scheduleAds();
+      }
+    });
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["data-tuiguang", "data-text-ad", "aria-label"],
+      attributeFilter: ["data-tuiguang", "data-text-ad", "aria-label", "style"],
     });
     const settingsObserver = new MutationObserver(scheduleAds);
     settingsObserver.observe(document.documentElement, {
@@ -8572,5 +8653,9 @@ button:disabled {
 
   if (document.documentElement) startSearchOptimizations();
   else document.addEventListener("DOMContentLoaded", startSearchOptimizations, { once: true });
+
+  }
+
+  watchSearchEntry(activateSearchPage);
 
 })();

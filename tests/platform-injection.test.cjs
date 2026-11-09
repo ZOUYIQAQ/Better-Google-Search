@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '..', 'search-quiet-cards.user.js'), 'utf8');
 
 // 关闭的平台运行完整源码时，任何页面访问都会立即失败，防止残留初始化漏过入口。
-function runDisabled(hostname, platform) {
+function runDisabled(hostname, platform, pathname = "/search") {
   const menus = [];
   const window = {};
   window.top = window.self = window;
@@ -14,7 +14,7 @@ function runDisabled(hostname, platform) {
   let reloads = 0, listener;
   const context = {
     window,
-    location: { hostname, pathname: '/search', reload: () => reloads++ },
+    location: { hostname, pathname, reload: () => reloads++ },
     GM_addValueChangeListener: (_key, callback) => { listener = callback; },
     GM_getValue: (key) => key === 'quiet-search.platforms.v1' ? { [platform]: false } : undefined,
     GM_registerMenuCommand: (label, callback) => menus.push({ label, callback }),
@@ -57,4 +57,13 @@ test('本地保存回调不重复触发刷新', () => {
   const result = runDisabled('www.baidu.com', 'baidu');
   result.change({ baidu: false }, { baidu: true }, false);
   assert.equal(result.reloads(), 0);
+});
+
+// 首页新增匹配同样必须在平台门禁处停止，不能启动路由监听。
+test('四站首页关闭注入时不访问页面或启动等待器', () => {
+  for (const [host, platform] of [['baidu.com', 'baidu'], ['www.sogou.com', 'sogou'], ['www.bing.com', 'bing'], ['www.google.com', 'google']]) {
+    const runtime = runDisabled(host, platform, '/');
+    assert.equal(runtime.pageReads, 0);
+    assert.equal(runtime.menus.length, 1);
+  }
 });
