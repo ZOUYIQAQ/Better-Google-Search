@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.18
+// @version      1.9.19
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -270,6 +270,220 @@ p {
   }
 
 
+  const OPTIMIZATION_KEY = "quiet-search.optimizations.v1";
+  let optimizationOptions = readOptimizationOptions();
+  const optimizedLinks = new Map();
+  let optimizationStyle = null;
+  let optimizationTimer = 0;
+
+  // 读取当前平台独立的增强选项，默认启用。
+  function readOptimizationOptions() {
+    try {
+      const all = GM_getValue(OPTIMIZATION_KEY, {});
+      return { simplify: true, directLinks: true, ...all[currentPlatform] };
+    } catch {
+      return { simplify: true, directLinks: true };
+    }
+  }
+
+  // 只接受可直接访问的网页地址，拒绝占位地址和带口令的网址。
+  function safeDestination(value) {
+    try {
+      const url = new URL(value);
+      if (!/^https?:$/.test(url.protocol) || url.username || url.password) return null;
+      if (/^(?:nourl\.|localhost$)/i.test(url.hostname)) return null;
+      return url.href;
+    } catch {
+      return null;
+    }
+  }
+
+  // 从搜索站公开的跳转参数中还原地址，不猜测加密内容。
+  function decodeSearchDestination(value, base = location.href) {
+    try {
+      const url = new URL(value, base);
+      let destination = null;
+      if (/(^|\.)google\.[a-z.]+$/i.test(url.hostname) && url.pathname === "/url") {
+        destination = url.searchParams.get("q") || url.searchParams.get("url");
+      } else if (/(^|\.)bing\.com$/i.test(url.hostname) && url.pathname === "/ck/a") {
+        const encoded = url.searchParams.get("u") || "";
+        if (encoded.startsWith("a1")) {
+          const bytes = Uint8Array.from(atob(encoded.slice(2).replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+          destination = new TextDecoder().decode(bytes);
+        }
+      } else if (/(^|\.)(?:baidu|sogou)\.com$/i.test(url.hostname) && url.pathname === "/link") {
+        destination = url.searchParams.get("url");
+      }
+      return safeDestination(destination);
+    } catch {
+      return null;
+    }
+  }
+
+  // 设置中提供独立开关，修改立即生效并保留其他平台的配置。
+  function addOptimizationSettings(form, before = form.firstChild) {
+    const field = document.createElement("fieldset");
+    field.className = "platform-settings optimization-settings";
+    const legend = document.createElement("legend");
+    legend.textContent = "搜索增强";
+    field.append(legend);
+    for (const [key, label] of [["simplify", "简化推广与重复入口"], ["directLinks", "优化结果跳转"]]) {
+      const row = document.createElement("label");
+      const text = document.createElement("span");
+      text.textContent = label;
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = optimizationOptions[key];
+      input.addEventListener("change", async () => {
+        optimizationOptions = { ...optimizationOptions, [key]: input.checked };
+        const all = GM_getValue(OPTIMIZATION_KEY, {});
+        await GM_setValue(OPTIMIZATION_KEY, { ...all, [currentPlatform]: optimizationOptions });
+        applySearchOptimizations();
+      });
+      row.append(text, input);
+      field.append(row);
+    }
+    form.insertBefore(field, before);
+  }
+
+  // 记录修改前的链接，只改网址，保留搜索站原有事件和交互。
+  function optimizeLink(link, destination) {
+    if (!destination || link.href === destination) return;
+    const previous = optimizedLinks.get(link);
+    if (!previous || link.getAttribute("href") !== previous.destination) {
+      optimizedLinks.set(link, { original: link.getAttribute("href"), destination });
+    } else {
+      previous.destination = destination;
+    }
+    link.setAttribute("href", destination);
+  }
+
+  // 应用可逆的简化样式和安全直达链接；搜索站重建页面后自动恢复。
+  function applySearchOptimizations() {
+    if (!document.documentElement) return;
+    if (!optimizationStyle) {
+      optimizationStyle = document.createElement("style");
+      optimizationStyle.id = "qc-search-clean";
+    }
+    const selectors = {
+      baidu: [
+        '#content_right [class*="toplist"]',
+        '#content_right [class*="hotsearch"]',
+        '[class*="action-item-download_"]',
+        '[class*="qr-code-download-card_"]',
+        'html #s_tab #s_tab_inner .s-tab-csaitab',
+        'html #s_tab #s_tab_inner .s-tab-note',
+        'html #s_tab #s_tab_inner .s-tab-wenku',
+        '#help a[href*="e.baidu.com"]',
+      ].join(",\n"),
+      sogou: [
+        '#right',
+        '.top-hintBox',
+        '.r-sech.ext_query',
+        '#wrapper > .querybox',
+        '#sogou_aimode',
+        '#sogou_hanyu',
+        '#sogou_fanyi',
+      ].join(",\n"),
+      bing: '#id_rh',
+      google: '',
+    };
+    const selector = selectors[currentPlatform];
+    const layout = currentPlatform === "sogou" ? `
+.qc-ai:has([class*="ai-pause__btn"]) [class*="height-transition__contentWrapper"] {
+  height: auto !important;
+  min-height: 0 !important;
+}
+.qc-ai [class*="ai-pause__btn"] {
+  background: var(--qc-hover,#eed8d3) !important;
+  color: var(--qc-link,#765047) !important;
+}
+html .qc-results:has(.middle-better-hintBox) > .better-hintBox {
+  display: none !important;
+}
+html .qc-results #hint_container {
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+html .qc-results #hint_container td {
+  width: 50% !important;
+  min-width: 0 !important;
+  box-sizing: border-box;
+}
+html .qc-results #hint_container a {
+  width: auto !important;
+  max-width: 100%;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+.qc-results .hint-mid {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 10px;
+}
+.qc-results .hint-mid > span {
+  width: auto !important;
+  min-width: 0;
+  margin: 0 !important;
+}
+.qc-results .hint-mid a {
+  display: block;
+  width: auto !important;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal !important;
+  color: var(--qc-primary,#765047) !important;
+}
+` : "";
+    const css = optimizationOptions.simplify && selector ? `${selector} {\n  display: none !important;\n}\n${layout}` : "";
+    if (optimizationStyle.textContent !== css) optimizationStyle.textContent = css;
+    if (!optimizationStyle.isConnected) (document.head || document.documentElement).append(optimizationStyle);
+    if (!optimizationOptions.directLinks) {
+      for (const [link, previous] of optimizedLinks) {
+        if (link.getAttribute("href") === previous.destination) link.setAttribute("href", previous.original);
+      }
+      optimizedLinks.clear();
+      return;
+    }
+    for (const link of document.querySelectorAll('.qc-card h3 a[href],.qc-card h2 a[href],#search h3 a[href],#search a[href] > h3')) {
+      const anchor = link.tagName === "A" ? link : link.closest("a");
+      if (anchor) optimizeLink(anchor, decodeSearchDestination(anchor.href));
+    }
+    if (currentPlatform === "baidu") {
+      for (const card of document.querySelectorAll('#content_left > [mu],#content_left > .result')) {
+        const headings = card.querySelectorAll("h3");
+        if (headings.length !== 1 || card.matches('.qc-ad-hidden')) continue;
+        const anchor = headings[0].querySelector("a[href]");
+        if (!anchor) continue;
+        const metadata = anchor.getAttribute("data-mdurl") || card.getAttribute("mu");
+        const destination = safeDestination(metadata);
+        if (!destination || /^(?:https?:\/\/)?(?:www\.)?baidu\.com\/link/i.test(destination)) continue;
+        const original = anchor.href;
+        for (const related of card.querySelectorAll("a[href]")) {
+          if (related.href === original) optimizeLink(related, destination);
+        }
+      }
+    }
+    for (const link of optimizedLinks.keys()) if (!link.isConnected) optimizedLinks.delete(link);
+  }
+
+  // 合并原生页面的突发更新，避免每次 DOM 变动都扫描一次。
+  function scheduleSearchOptimizations() {
+    if (optimizationTimer) return;
+    optimizationTimer = setTimeout(() => {
+      optimizationTimer = 0;
+      applySearchOptimizations();
+    }, 80);
+  }
+
+  // 启动增强观察器；平台关闭时不会到达这里。
+  function startSearchOptimizations() {
+    applySearchOptimizations();
+    const observer = new MutationObserver(scheduleSearchOptimizations);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
 // 为设置表单串行保存最新值，连续输入颜色时合并短时间内的变更。
 function createLiveSettings(form, readDraft, saveDraft, showStatus) {
   let timer = 0;
@@ -418,7 +632,7 @@ dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both;
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.18";
+  const VERSION = "1.9.19";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -4536,6 +4750,7 @@ input[type="color"]:disabled,
     actions.append(reset, spacer, cancel);
     form.append(heading, intro, colorField, layoutField, loadField, behavior, status, actions);
     addPlatformSettings(form, colorField);
+    addOptimizationSettings(form, colorField);
     dialog.append(form);
     shadow.append(sheet, dialog);
     host.dataset.dark = String(root.dataset.gqcTheme === "dark");
@@ -6928,8 +7143,15 @@ html[data-qc-active="true"]
       return [...scope.children]
         .filter(normalCard)
         .map((node) => {
-          const title = node.querySelector(A.heading),
-            url = external(title.getAttribute("href"), base);
+          const title = node.querySelector(A.heading);
+          const href = title.getAttribute("href");
+          const metadata = currentPlatform === "baidu"
+            ? safeDestination(title.getAttribute("data-mdurl") || node.getAttribute("mu"))
+            : null;
+          const destination = optimizationOptions.directLinks
+            ? metadata || decodeSearchDestination(href, base)
+            : null;
+          const url = external(destination || href, base);
           if (!url) return null;
           const key = new URL(url);
           key.hash = "";
@@ -7890,6 +8112,7 @@ button:disabled {
       actions.append(reset, cancel);
       form.append(status, actions);
       addPlatformSettings(form);
+      addOptimizationSettings(form, form.querySelector(".platform-settings").nextSibling);
       dialog.append(title, intro, form);
       shadow.append(ui, dialog);
       document.body.append(host);
@@ -8346,5 +8569,8 @@ button:disabled {
   if (document.documentElement) startAds();
   else document.addEventListener("DOMContentLoaded", startAds, { once: true });
 })();
+
+  if (document.documentElement) startSearchOptimizations();
+  else document.addEventListener("DOMContentLoaded", startSearchOptimizations, { once: true });
 
 })();
