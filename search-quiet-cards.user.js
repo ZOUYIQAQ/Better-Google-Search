@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.22
+// @version      1.9.23
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -684,7 +684,7 @@ dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both;
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.22";
+  const VERSION = "1.9.23";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -949,7 +949,7 @@ html[data-gqc-active="true"] #searchform {
   min-height: 0 !important;
   width: min(var(--gqc-column), calc(100% - 48px)) !important;
   max-width: none !important;
-  margin: 28px auto 0 !important;
+  margin: 18px auto 0 !important;
   padding: 0 !important;
   background: transparent !important;
 }
@@ -999,7 +999,7 @@ html[data-gqc-active="true"] #searchform .logo {
   position: static !important;
   width: auto !important;
   height: auto !important;
-  margin: 0 auto 20px !important;
+  margin: 0 auto 12px !important;
   padding: 0 !important;
   text-align: center !important;
 }
@@ -1425,7 +1425,7 @@ html[data-gqc-active="true"] .gqc-layout {
   width: min(var(--gqc-column), calc(100% - 48px)) !important;
   max-width: none !important;
   min-width: 0 !important;
-  margin: 28px auto 0 !important;
+  margin: 16px auto 0 !important;
   padding: 0 !important;
   gap: 24px !important;
   float: none !important;
@@ -1506,6 +1506,11 @@ html[data-gqc-active="true"] .gqc-fallback-center {
   max-width: 100% !important;
   min-width: 0 !important;
   margin-inline: auto !important;
+}
+/* 结果区只保留外层的 16px 间距，避免原生容器纵向留白叠加。 */
+html[data-gqc-active="true"] :is(.gqc-primary, .gqc-stack, .gqc-stack-item, .gqc-results) {
+  margin-block: 0 !important;
+  padding-block: 0 !important;
 }
 html[data-gqc-active="true"] .gqc-results {
   width: 100% !important;
@@ -2040,7 +2045,7 @@ html[data-gqc-active="true"] .gqc-questions .P4K06d:focus-visible {
 }
 /* AI刚出现时即置顶并使用固定预览框，生成完成不改变下方结果起点。 */
 html[data-gqc-active="true"] #rcnt > :has(#Odp5De,#eKIzJc):not(:has(#rso)) { order: -1; }
-html[data-gqc-active="true"] :is(.gqc-ai-managed,.gqc-ai-overview.gqc-ai-pending,#rcnt > :has(#Odp5De,#eKIzJc):not(:has(#rso))):not(.gqc-user-expanded) {
+html[data-gqc-active="true"] :is(.gqc-ai-managed,.gqc-ai-overview.gqc-ai-pending,#rcnt > :has(#Odp5De,#eKIzJc):not(:has(#rso))):not(.gqc-user-expanded):not(.gqc-ai-unavailable) {
   position: relative;
   box-sizing: border-box !important;
   height: 485px !important;
@@ -2184,7 +2189,18 @@ html[data-gqc-active="true"] .gqc-related .MjjYud {
 html[data-gqc-active="true"] .gqc-related .gqc-related-link {
   color: var(--gqc-link) !important;
 }
-/* 输入文字与搜索框图标垂直居中，焦点线不改变输入框几何。 */
+/* 失败提示保持自然高度，不让预览框、遮罩和展开按钮留下空白。 */
+html[data-gqc-active="true"] .gqc-ai-unavailable,
+html[data-gqc-active="true"] .gqc-ai-unavailable :is(#m-x-content, .h7Tj7e) {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+html[data-gqc-active="true"] .gqc-ai-unavailable::before,
+html[data-gqc-active="true"] .gqc-ai-unavailable::after,
+html[data-gqc-active="true"] .gqc-ai-unavailable > .gqc-ai-toggle { display: none !important; }
+/* 输入文字与搜索框图标垂直居中，额外留出字形下沿，避免中文和下伸字母被裁切。 */
 html[data-gqc-active="true"] #searchform .RNNXgb {
   align-items: center !important;
   min-height: 56px !important;
@@ -2208,9 +2224,13 @@ html[data-gqc-active="true"] #searchform :is(input, textarea)[name="q"] {
   align-self: center !important;
   margin: 0 !important;
   padding: 0 !important;
-  height: 28px !important;
-  min-height: 28px !important;
-  line-height: 28px !important;
+  height: 1.8em !important;
+  min-height: 36px !important;
+  max-height: none !important;
+  line-height: 1.5 !important;
+  white-space: pre !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
   resize: none !important;
   overflow-y: hidden !important;
 }
@@ -3877,6 +3897,18 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
 
   // 在生成与完成阶段共用同一预览框，原生按钮尚未可见时仍可主动展开。
   function syncAiPreview(module) {
+    // 仅以可见的原生失败提示判定终止，后续恢复正文时自动撤销收缩状态。
+    const unavailable = [...module.querySelectorAll('span, p, div, [role="status"]')].some((node) =>
+      node.children.length === 0 && nativeContentVisible(node, module) &&
+      /(?:目前|暂时|当前)?无法生成\s*AI\s*(?:概览|摘要|概要)|AI\s*(?:概览|摘要|概要).*?(?:无法生成|暂不可用)|AI (?:overview|summary) (?:is )?(?:not available|unavailable)|can't generate an AI/i.test(node.textContent.trim())
+    );
+    if (unavailable) {
+      mark(module, "gqc-ai-unavailable");
+      unmark(module, "gqc-ai-pending");
+      unmark(module, "gqc-user-expanded");
+      return;
+    }
+    unmark(module, "gqc-ai-unavailable");
     if (!module.querySelector("#m-x-content")) return;
     mark(module, "gqc-ai-managed");
     let button = module.querySelector(":scope > .gqc-ai-toggle");
