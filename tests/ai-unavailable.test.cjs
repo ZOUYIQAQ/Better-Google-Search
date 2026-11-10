@@ -20,7 +20,7 @@ function moduleFor(text) {
     querySelectorAll: () => [{children: [], textContent: text}], querySelector: () => null };
 }
 test('AI 摘要失败后收缩，并撤销生成及展开占位；恢复后可重新生成', () => {
-  for (const text of ['目前无法生成 AI 概要。请稍后重试。', '目前无法生成 AI 摘要。请稍后重试。', 'AI Overview is unavailable']) {
+  for (const text of ['无法针对此搜索生成 AI 概览', '目前无法生成 AI 概要。请稍后重试。', '目前无法生成 AI 摘要。请稍后重试。', 'AI Overview is unavailable']) {
     const module = moduleFor(text);
     const sync = syncFor(true);
     sync(module);

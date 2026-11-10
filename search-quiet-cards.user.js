@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.23
+// @version      1.9.24
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -684,7 +684,7 @@ dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both;
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.23";
+  const VERSION = "1.9.24";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -1208,6 +1208,8 @@ html[data-gqc-active="true"] .gqc-nav-item:focus-visible {
   outline-offset: -4px;
   border-radius: 8px !important;
 }
+
+html[data-gqc-active="true"] .gqc-empty-appbar { display: none !important; }
 
 html[data-gqc-active="true"] .gqc-native-divider {
   border-color: transparent !important;
@@ -2200,6 +2202,15 @@ html[data-gqc-active="true"] .gqc-ai-unavailable :is(#m-x-content, .h7Tj7e) {
 html[data-gqc-active="true"] .gqc-ai-unavailable::before,
 html[data-gqc-active="true"] .gqc-ai-unavailable::after,
 html[data-gqc-active="true"] .gqc-ai-unavailable > .gqc-ai-toggle { display: none !important; }
+/* 失败时原生空标题、分隔线和回答底部余量也不再占位。 */
+html[data-gqc-active="true"] .gqc-ai-unavailable > .NmCNL:has(> .ZpdpPe:empty),
+html[data-gqc-active="true"] .gqc-ai-unavailable .KMCbD { display: none !important; }
+html[data-gqc-active="true"] .gqc-ai-unavailable .YzCcne { margin-block: 0 !important; }
+html[data-gqc-active="true"] .gqc-ai-unavailable .OZ9ddf {
+  margin-top: 0 !important;
+  padding-bottom: 0 !important;
+  max-height: none !important;
+}
 /* 输入文字与搜索框图标垂直居中，额外留出字形下沿，避免中文和下伸字母被裁切。 */
 html[data-gqc-active="true"] #searchform .RNNXgb {
   align-items: center !important;
@@ -2224,8 +2235,10 @@ html[data-gqc-active="true"] #searchform :is(input, textarea)[name="q"] {
   align-self: center !important;
   margin: 0 !important;
   padding: 0 !important;
-  height: 1.8em !important;
-  min-height: 36px !important;
+  border: 0 !important;
+  height: max(40px, 2em) !important;
+  min-height: 40px !important;
+  padding-block: calc((max(40px, 2em) - 1.5em) / 2) !important;
   max-height: none !important;
   line-height: 1.5 !important;
   white-space: pre !important;
@@ -2518,6 +2531,15 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
 
   // 统一搜索栏、图标和导航的居中布局。
   function centerHeader() {
+    // 原生空工具栏仍带最小高度和间隔；只折叠无文字、无控件的占位，内容出现即恢复。
+    const appbar = document.querySelector("#appbar");
+    if (appbar) {
+      const content = appbar.cloneNode(true);
+      for (const decoration of content.querySelectorAll("style,script,template")) decoration.remove();
+      const hasContent = content.textContent.trim() || content.querySelector('a,button,input,select,[role="button"],img,svg');
+      if (hasContent) unmark(appbar, "gqc-empty-appbar");
+      else mark(appbar, "gqc-empty-appbar");
+    }
     const header = document.querySelector("#searchform");
     if (header) {
       for (
@@ -3900,7 +3922,7 @@ html[data-gqc-active="true"] #searchform [name="q"]:focus-visible {
     // 仅以可见的原生失败提示判定终止，后续恢复正文时自动撤销收缩状态。
     const unavailable = [...module.querySelectorAll('span, p, div, [role="status"]')].some((node) =>
       node.children.length === 0 && nativeContentVisible(node, module) &&
-      /(?:目前|暂时|当前)?无法生成\s*AI\s*(?:概览|摘要|概要)|AI\s*(?:概览|摘要|概要).*?(?:无法生成|暂不可用)|AI (?:overview|summary) (?:is )?(?:not available|unavailable)|can't generate an AI/i.test(node.textContent.trim())
+      /(?:目前|暂时|当前)?无法(?:针对此搜索)?生成\s*AI\s*(?:概览|摘要|概要)|AI\s*(?:概览|摘要|概要).*?(?:无法生成|暂不可用)|AI (?:overview|summary) (?:is )?(?:not available|unavailable)|can't generate an AI/i.test(node.textContent.trim())
     );
     if (unavailable) {
       mark(module, "gqc-ai-unavailable");
