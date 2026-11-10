@@ -2,7 +2,7 @@
 // @name         谷歌搜索样式优化 · MD3 风格
 // @name:zh-CN   谷歌搜索样式优化 · MD3 风格
 // @namespace    local.google-search.quiet-cards
-// @version      1.9.24
+// @version      1.9.25
 // @description  MD3 风格的 Google 搜索样式优化，支持卡片瀑布流、实时设置与自动翻页，兼容百度、必应、搜狗。
 // @author       dot
 // @downloadURL  https://raw.githubusercontent.com/ZOUYIQAQ/Better-Google-Search/main/search-quiet-cards.user.js
@@ -684,7 +684,7 @@ dialog[open]::backdrop { animation: settings-backdrop-enter 180ms ease-out both;
     return;
   const PREFIX = "gqc";
   const STYLE_ID = `${PREFIX}-styles`;
-  const VERSION = "1.9.24";
+  const VERSION = "1.9.25";
   const read = (name, fallback) => {
     try {
       return typeof GM_getValue === "function"
@@ -2206,6 +2206,10 @@ html[data-gqc-active="true"] .gqc-ai-unavailable > .gqc-ai-toggle { display: non
 html[data-gqc-active="true"] .gqc-ai-unavailable > .NmCNL:has(> .ZpdpPe:empty),
 html[data-gqc-active="true"] .gqc-ai-unavailable .KMCbD { display: none !important; }
 html[data-gqc-active="true"] .gqc-ai-unavailable .YzCcne { margin-block: 0 !important; }
+/* 原生失败容器有 -8px 上边距，会把提示行推高并留下不对称的底部空间。 */
+html[data-gqc-active="true"] .gqc-ai-unavailable [data-lhcontainer="1"] {
+  margin-block: 0 !important;
+}
 html[data-gqc-active="true"] .gqc-ai-unavailable .OZ9ddf {
   margin-top: 0 !important;
   padding-bottom: 0 !important;
